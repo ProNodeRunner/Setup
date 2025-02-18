@@ -49,9 +49,6 @@ install_server() {
     echo "Устанавливаем fail2ban для защиты от атак..."  
     sudo DEBIAN_FRONTEND=noninteractive apt install -y fail2ban  
 
-    echo "Устанавливаем curl, git, htop и vnstat..."  
-    sudo DEBIAN_FRONTEND=noninteractive apt install -y curl git htop vnstat  
-
     # Установка Prometheus  
     echo "Устанавливаем Prometheus..."  
 
