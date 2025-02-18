@@ -44,13 +44,10 @@ install_server() {
     echo "Устанавливаем UFW (брандмауэр)..."  
     sudo DEBIAN_FRONTEND=noninteractive apt install -y ufw  
     sudo ufw allow OpenSSH  
-    sudo ufw enable  
+    echo "y" | sudo ufw enable  # Включаем UFW без запроса на подтверждение  
 
     echo "Устанавливаем fail2ban для защиты от атак..."  
     sudo DEBIAN_FRONTEND=noninteractive apt install -y fail2ban  
-
-    echo "Устанавливаем curl, git, htop и vnstat..."  
-    sudo DEBIAN_FRONTEND=noninteractive apt install -y curl git htop vnstat  
 
     # Установка Prometheus  
     echo "Устанавливаем Prometheus..."  
@@ -124,7 +121,7 @@ remove_server() {
     sudo rm -rf /etc/prometheus /var/lib/prometheus /usr/local/bin/prometheus /usr/local/bin/promtool /etc/systemd/system/prometheus.service  
 
     # Удаление установленных пакетов  
-    sudo apt remove -y nodejs nano file ufw fail2ban curl git htop vnstat  
+    sudo apt remove -y nano file ufw fail2ban curl git htop vnstat  
     sudo apt autoremove -y  
 
     echo "Сервер удален!"  
