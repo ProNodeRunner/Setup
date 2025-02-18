@@ -5,9 +5,6 @@ install_server() {
     echo "Обновляем пакеты..."
     sudo apt update && sudo apt upgrade -y
 
-    echo "Устанавливаем Node.js..."
-    sudo apt install -y nodejs
-
     echo "Настраиваем machine-id..."
     sudo rm /etc/machine-id
     sudo systemd-machine-id-setup
