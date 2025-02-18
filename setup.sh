@@ -104,6 +104,9 @@ while true; do
 
     read -p "Введите номер опции [1-4]: " option  
 
+    # Удаление пробелов и контроль введенного значения  
+    option=$(echo $option | tr -d '[:space:]')  
+
     case $option in  
         1)  
             install_server  
