@@ -5,17 +5,18 @@ install_server() {
     echo "Обновляем пакеты..."  
     sudo DEBIAN_FRONTEND=noninteractive apt update && sudo DEBIAN_FRONTEND=noninteractive apt upgrade -y  
 
-    echo "Обновление ядра, если доступно..."  
+    echo "Устанавливаем последние обновления ядра, если доступно..."  
     sudo DEBIAN_FRONTEND=noninteractive apt install -y linux-generic  
 
-    # Проверка текущего ядра и перезагрузка, если новое ядро установлено  
+    # Проверка текущего ядра  
     CURRENT_KERNEL=$(uname -r)  
     NEW_KERNEL=$(dpkg -l | grep linux-image | awk '{print $2}' | sort | tail -n 1 | sed 's/linux-image-//g')  
 
     if [[ "$CURRENT_KERNEL" != "$NEW_KERNEL" ]]; then  
         echo "Доступно новое ядро: $NEW_KERNEL."  
-        echo "Перезагрузка системы для загрузки нового ядра..."  
-        sudo reboot  
+        echo "Следующее, что вы можете сделать, это перезагрузить сервер, чтобы загрузить новое ядро."  
+    else  
+        echo "Текущая версия ядра актуальна: $CURRENT_KERNEL."  
     fi  
 
     # Перезапускаем службы автоматом  
@@ -91,7 +92,7 @@ WantedBy=multi-user.target" | sudo tee /etc/systemd/system/prometheus.service
     sudo systemctl start prometheus  
     sudo systemctl enable prometheus  
 
-    echo "Сервер успешно установлен!"  
+    echo "Сервер успешно установлен! Выберите один из вариантов действий в меню."  
 }  
 
 # Функция для проверки загрузки ресурсов  
