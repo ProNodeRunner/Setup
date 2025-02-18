@@ -49,6 +49,9 @@ install_server() {
     echo "Устанавливаем fail2ban для защиты от атак..."  
     sudo DEBIAN_FRONTEND=noninteractive apt install -y fail2ban  
 
+    echo "Устанавливаем curl, git, htop и vnstat..."  
+    sudo DEBIAN_FRONTEND=noninteractive apt install -y curl git htop vnstat  
+
     # Установка Prometheus  
     echo "Устанавливаем Prometheus..."  
 
@@ -89,7 +92,11 @@ WantedBy=multi-user.target" | sudo tee /etc/systemd/system/prometheus.service
     sudo systemctl start prometheus  
     sudo systemctl enable prometheus  
 
-    echo "Сервер успешно установлен! Выберите один из вариантов действий в меню."  
+    echo "Сервер успешно установлен!"  
+    echo ""  # Первая пустая строка  
+    echo ""  # Вторая пустая строка  
+    echo ""  # Третья пустая строка  
+    echo "Выберите один из вариантов действий в меню."  
 }  
 
 # Функция для проверки загрузки ресурсов  
