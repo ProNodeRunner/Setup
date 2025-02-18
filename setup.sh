@@ -59,7 +59,7 @@ Wants=network-online.target
 After=network-online.target  
 
 [Service]  
-User=root  
+User=prometheus  
 ExecStart=/usr/local/bin/prometheus --config.file=/etc/prometheus/prometheus.yml --storage.tsdb.path=/var/lib/prometheus/data  
 
 [Install]  
@@ -80,7 +80,7 @@ check_resource_usage() {
     # Получение загрузки процессора  
     CPU_LOAD=$(top -b -n1 | grep "Cpu" | awk '{print $2 + $4}') # Половина строк  
     MEMORY_LOAD=$(free | grep Mem | awk '{print $3/$2 * 100}') # Процент использования памяти  
-    TRAFFIC=$(vnstat --oneline | awk -F\';\' '{print $2}') # Трафик  
+    TRAFFIC=$(vnstat --oneline | awk -F';' '{print $2}') # Трафик  
 
     echo "Загрузка процессора: ${CPU_LOAD}%"  
     echo "Загрузка памяти: ${MEMORY_LOAD}%"  
@@ -90,9 +90,12 @@ check_resource_usage() {
 # Функция для удаления сервера  
 remove_server() {  
     echo "Удаление сервера..."  
-    # Здесь могут быть команды для удаления сервера (например, остановка сервиса, удаление файлов и т.д.)  
-    # Для примера добавим сообщение  
-    echo "Сервер удален!"  # Замените это на реальные команды удаления  
+    # Удалите все необходимые файлы, остановите службы и т.д.  
+    sudo systemctl stop prometheus  
+    sudo systemctl disable prometheus  
+    sudo rm -rf /etc/prometheus  
+    sudo rm -rf /var/lib/prometheus  
+    echo "Сервер удален!" # Замените это на реальные команды удаления  
 }  
 
 while true; do  
