@@ -3,7 +3,20 @@
 # Функция для установки нового сервера  
 install_server() {  
     echo "Обновляем пакеты..."  
-    sudo apt update && sudo apt upgrade -y  
+    sudo DEBIAN_FRONTEND=noninteractive apt update && sudo DEBIAN_FRONTEND=noninteractive apt upgrade -y  
+
+    echo "Обновление ядра, если доступно..."  
+    sudo DEBIAN_FRONTEND=noninteractive apt install -y linux-generic  
+
+    # Проверка текущего ядра и перезагрузка, если новое ядро установлено  
+    CURRENT_KERNEL=$(uname -r)  
+    NEW_KERNEL=$(dpkg -l | grep linux-image | awk '{print $2}' | sort | tail -n 1 | sed 's/linux-image-//g')  
+
+    if [[ "$CURRENT_KERNEL" != "$NEW_KERNEL" ]]; then  
+        echo "Доступно новое ядро: $NEW_KERNEL."  
+        echo "Перезагрузка системы для загрузки нового ядра..."  
+        sudo reboot  
+    fi  
 
     # Перезапускаем службы автоматом  
     echo "Перезапускаем службы..."  
@@ -22,21 +35,21 @@ install_server() {
     cat /etc/machine-id  
 
     echo "Устанавливаем текстовый редактор nano..."  
-    sudo apt install -y nano  
+    sudo DEBIAN_FRONTEND=noninteractive apt install -y nano  
 
     echo "Устанавливаем файл-менеджер..."  
-    sudo apt install -y file  
+    sudo DEBIAN_FRONTEND=noninteractive apt install -y file  
 
     echo "Устанавливаем UFW (брандмауэр)..."  
-    sudo apt install -y ufw  
+    sudo DEBIAN_FRONTEND=noninteractive apt install -y ufw  
     sudo ufw allow OpenSSH  
     sudo ufw enable  
 
     echo "Устанавливаем fail2ban для защиты от атак..."  
-    sudo apt install -y fail2ban  
+    sudo DEBIAN_FRONTEND=noninteractive apt install -y fail2ban  
 
     echo "Устанавливаем curl, git, htop и vnstat..."  
-    sudo apt install -y curl git htop vnstat  
+    sudo DEBIAN_FRONTEND=noninteractive apt install -y curl git htop vnstat  
 
     # Установка Prometheus  
     echo "Устанавливаем Prometheus..."  
@@ -46,7 +59,7 @@ install_server() {
     sudo mkdir -p /var/lib/prometheus  
 
     # Скачайте последнюю версию Prometheus  
-    PROMETHEUS_VERSION="2.40.0" # Укажите последнюю стабильную версию на момент установки  
+    PROMETHEUS_VERSION="2.40.0" # Укажите последнюю стабильную версию  
     wget https://github.com/prometheus/prometheus/releases/download/v$PROMETHEUS_VERSION/prometheus-$PROMETHEUS_VERSION.linux-amd64.tar.gz  
     tar -xvf prometheus-$PROMETHEUS_VERSION.linux-amd64.tar.gz  
     cd prometheus-$PROMETHEUS_VERSION.linux-amd64 || return  
