@@ -59,7 +59,7 @@ Wants=network-online.target
 After=network-online.target  
 
 [Service]  
-User=prometheus  
+User=root  
 ExecStart=/usr/local/bin/prometheus --config.file=/etc/prometheus/prometheus.yml --storage.tsdb.path=/var/lib/prometheus/data  
 
 [Install]  
@@ -90,12 +90,9 @@ check_resource_usage() {
 # Функция для удаления сервера  
 remove_server() {  
     echo "Удаление сервера..."  
-    # Удалите все необходимые файлы, остановите службы и т.д.  
-    sudo systemctl stop prometheus  
-    sudo systemctl disable prometheus  
-    sudo rm -rf /etc/prometheus  
-    sudo rm -rf /var/lib/prometheus  
-    echo "Сервер удален!" # Замените это на реальные команды удаления  
+    # Здесь могут быть команды для удаления сервера (например, остановка сервиса, удаление файлов и т.д.)  
+    # Для примера добавим сообщение  
+    echo "Сервер удален!"  # Замените это на реальные команды удаления  
 }  
 
 while true; do  
@@ -125,4 +122,7 @@ while true; do
             echo "Неверный ввод, попробуйте снова."  
             ;;  
     esac  
+  
+    # Небольшая пауза перед следующей итерацией  
+    sleep 1  
 done
