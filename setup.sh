@@ -92,10 +92,10 @@ WantedBy=multi-user.target" | sudo tee /etc/systemd/system/prometheus.service
     sudo systemctl start prometheus  
     sudo systemctl enable prometheus  
 
-    echo "Сервер успешно установлен!"  
-    echo ""  # Первая пустая строка  
-    echo ""  # Вторая пустая строка  
-    echo ""  # Третья пустая строка  
+    echo ""  # Отступ в одну строку  
+    # Зелёный цвет для успеха  
+    echo -e "\e[32mСЕРВЕР УСПЕШНО УСТАНОВЛЕН!\e[0m"  
+    echo ""  # Одна пустая строка после финального сообщения  
     echo "Выберите один из вариантов действий в меню."  
 }  
 
