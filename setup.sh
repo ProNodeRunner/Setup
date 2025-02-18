@@ -39,12 +39,7 @@ install_server() {
     sudo DEBIAN_FRONTEND=noninteractive apt install -y nano  
 
     echo "Устанавливаем файл-менеджер..."  
-    sudo DEBIAN_FRONTEND=noninteractive apt install -y file  
-
-    echo "Устанавливаем UFW (брандмауэр)..."  
-    sudo DEBIAN_FRONTEND=noninteractive apt install -y ufw  
-    sudo ufw allow OpenSSH  
-    echo "y" | sudo ufw enable  # Включаем UFW без запроса на подтверждение  
+    sudo DEBIAN_FRONTEND=noninteractive apt install -y file   
 
     echo "Устанавливаем fail2ban для защиты от атак..."  
     sudo DEBIAN_FRONTEND=noninteractive apt install -y fail2ban  
@@ -57,7 +52,7 @@ install_server() {
     sudo mkdir -p /var/lib/prometheus  
 
     # Скачайте последнюю версию Prometheus  
-    PROMETHEUS_VERSION="2.40.0" # Укажите последнюю стабильную версию  
+    PROMETHEUS_VERSION="3.20.0" # Укажите последнюю стабильную версию  
     wget https://github.com/prometheus/prometheus/releases/download/v$PROMETHEUS_VERSION/prometheus-$PROMETHEUS_VERSION.linux-amd64.tar.gz  
     tar -xvf prometheus-$PROMETHEUS_VERSION.linux-amd64.tar.gz  
     cd prometheus-$PROMETHEUS_VERSION.linux-amd64 || return  
