@@ -51,11 +51,11 @@ install_server() {
     sudo mkdir -p /etc/prometheus  
     sudo mkdir -p /var/lib/prometheus  
 
-    # Скачайте последнюю версию Prometheus  
-    PROMETHEUS_VERSION="3.20.0" # Укажите последнюю стабильную версию  
-    wget https://github.com/prometheus/prometheus/releases/download/v$PROMETHEUS_VERSION/prometheus-$PROMETHEUS_VERSION.linux-amd64.tar.gz  
-    tar -xvf prometheus-$PROMETHEUS_VERSION.linux-amd64.tar.gz  
-    cd prometheus-$PROMETHEUS_VERSION.linux-amd64 || return  
+# Скачайте последнюю версию Prometheus  
+PROMETHEUS_VERSION="3.2.0" # Укажите последнюю стабильную версию  
+wget https://github.com/prometheus/prometheus/releases/download/v$PROMETHEUS_VERSION/prometheus-$PROMETHEUS_VERSION.darwin-amd64.tar.gz  
+tar -xvf prometheus-$PROMETHEUS_VERSION.darwin-amd64.tar.gz  
+cd prometheus-$PROMETHEUS_VERSION.darwin-amd64 || return
 
     # Переместите бинарные файлы в /usr/local/bin  
     sudo mv prometheus /usr/local/bin/  
