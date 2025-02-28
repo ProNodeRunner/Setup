@@ -44,6 +44,10 @@ install_server() {
     echo "Устанавливаем fail2ban для защиты от атак..."  
     sudo DEBIAN_FRONTEND=noninteractive apt install -y fail2ban  
 
+    # Установка screen
+    echo "Устанавливаем screen для управления сессиями..."
+    sudo DEBIAN_FRONTEND=noninteractive apt install -y screen
+
     # Установка Prometheus  
     echo "Устанавливаем Prometheus..."  
 
@@ -105,9 +109,7 @@ check_resource_usage() {
     echo "Интернет-трафик: ${TRAFFIC}"  
 }  
 
-# ▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼
-# НОВАЯ ФУНКЦИЯ ДЛЯ ПРОВЕРКИ НОД (ДОБАВЛЕНО)
-# ▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲
+# Функция для проверки нод на сервере
 check_nodes() {
     echo "=== Анализ нод на сервере ==="
 
