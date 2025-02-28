@@ -51,11 +51,11 @@ install_server() {
     sudo mkdir -p /etc/prometheus  
     sudo mkdir -p /var/lib/prometheus  
 
-# Скачайте последнюю версию Prometheus  
-PROMETHEUS_VERSION="3.2.0" # Укажите последнюю стабильную версию  
-wget https://github.com/prometheus/prometheus/releases/download/v$PROMETHEUS_VERSION/prometheus-$PROMETHEUS_VERSION.darwin-amd64.tar.gz  
-tar -xvf prometheus-$PROMETHEUS_VERSION.darwin-amd64.tar.gz  
-cd prometheus-$PROMETHEUS_VERSION.darwin-amd64 || return
+    # Скачайте последнюю версию Prometheus  
+    PROMETHEUS_VERSION="3.2.0" # Укажите последнюю стабильную версию  
+    wget https://github.com/prometheus/prometheus/releases/download/v$PROMETHEUS_VERSION/prometheus-$PROMETHEUS_VERSION.darwin-amd64.tar.gz  
+    tar -xvf prometheus-$PROMETHEUS_VERSION.darwin-amd64.tar.gz  
+    cd prometheus-$PROMETHEUS_VERSION.darwin-amd64 || return
 
     # Переместите бинарные файлы в /usr/local/bin  
     sudo mv prometheus /usr/local/bin/  
@@ -105,6 +105,39 @@ check_resource_usage() {
     echo "Интернет-трафик: ${TRAFFIC}"  
 }  
 
+# ▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼
+# НОВАЯ ФУНКЦИЯ ДЛЯ ПРОВЕРКИ НОД (ДОБАВЛЕНО)
+# ▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲
+check_nodes() {
+    echo "=== Анализ нод на сервере ==="
+
+    # Проверка процессов
+    echo -e "\n[!] Запущенные процессы, использующие порты 8080 и выше:"
+    ps aux | grep -E '[n]ode|[d]aemon|[s]erver' | grep -E '808[0-9]|809[0-9]'
+
+    # Проверка сетевых подключений
+    echo -e "\n[!] Открытые порты 8080 и выше:"
+    sudo ss -tulpn | grep -E '808[0-9]|809[0-9]'
+
+    # Проверка конфигурационных файлов
+    echo -e "\n[!] Поиск конфигурационных файлов нод:"
+    find / -type d -name "config" 2>/dev/null | grep -E 'node|chain|testnet'
+
+    # Проверка Docker-контейнеров
+    echo -e "\n[!] Docker-контейнеры, использующие порты 8080 и выше:"
+    docker ps --format "table {{.Names}}\t{{.Status}}\t{{.Ports}}" | grep -E '808[0-9]|809[0-9]'
+
+    # Проверка системных сервисов
+    echo -e "\n[!] Системные сервисы, связанные с нодами:"
+    systemctl list-units --type=service | grep -E 'node|chain|testnet'
+
+    # Проверка логов
+    echo -e "\n[!] Логи нод:"
+    sudo journalctl -u *node* -u *chain* -u *testnet* -n 100 --no-pager
+
+    echo -e "\n=== Поиск завершен ==="
+}
+
 # Функция для перезагрузки сервера  
 reboot_server() {  
     echo "Перезагрузка сервера..."  
@@ -131,37 +164,25 @@ while true; do
     echo "Выберите опцию:"  
     echo "1. Установить новый сервер"  
     echo "2. Проверить загрузку ресурсов"  
-    echo "3. Перезагрузить сервер"  
-    echo "4. Удалить сервер"  
-    echo "5. Выход"  
+    echo "3. Проверить ноды на сервере"      # НОВЫЙ ПУНКТ
+    echo "4. Перезагрузить сервер"           # СМЕЩЁН
+    echo "5. Удалить сервер"                 # СМЕЩЁН
+    echo "6. Выход"                          # СМЕЩЁН
 
-    read -p "Введите номер опции [1-5]: " option  
-
-    # Удаление пробелов и контроль введенного значения  
+    read -p "Введите номер опции [1-6]: " option  
     option=$(echo $option | tr -d '[:space:]')  
 
     case $option in  
-        1)  
-            install_server  
-            ;;  
-        2)  
-            check_resource_usage  
-            ;;  
-        3)  
-            reboot_server  
-            ;;  
-        4)  
-            remove_server  
-            ;;  
-        5)  
+        1) install_server ;;  
+        2) check_resource_usage ;;  
+        3) check_nodes ;;                   # НОВЫЙ КЕЙС
+        4) reboot_server ;;                 # СМЕЩЁН
+        5) remove_server ;;                 # СМЕЩЁН
+        6)                                  # СМЕЩЁН
             echo "Выход."  
             break  
             ;;  
-        *)  
-            echo "Неверный ввод, попробуйте снова."  
-            ;;  
+        *) echo "Неверный ввод, попробуйте снова." ;;  
     esac  
-
-    # Небольшая пауза перед следующей итерацией  
     sleep 1  
 done
