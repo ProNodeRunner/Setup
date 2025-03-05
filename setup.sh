@@ -10,9 +10,9 @@ NC='\033[0m'
 show_menu() {
     clear
     echo -e "${ORANGE}"
-    curl -sSf $LOGO_URL 2>/dev/null || echo -e "=== Server Management ==="
+    curl -sSf "$LOGO_URL" 2>/dev/null || echo -e "=== Server Management ==="
     echo -e "\n\n\n"
-    echo " ༺ Управление сервером v2.0 ༻ "
+    echo " ༺ Управление сервером v3.0 ༻ "
     echo "▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔"
     echo "1) Установить новый сервер"
     echo "2) Проверить загрузку ресурсов"
@@ -69,15 +69,16 @@ install_server() {
     fi
 
     echo -e "${ORANGE}[*] Устанавливаем компоненты...${NC}"  
-    if ! sudo DEBIAN_FRONTEND=noninteractive apt install -y nano file fail2ban screen vnstat; then
+    if ! sudo DEBIAN_FRONTEND=noninteractive apt install -y wget tar nano file fail2ban screen vnstat; then
         errors+=("Ошибка установки базовых компонентов")
     fi
 
     echo -e "${ORANGE}[*] Устанавливаем Prometheus...${NC}"  
     PROMETHEUS_VERSION="3.2.1"
     PROMETHEUS_FILE="prometheus-${PROMETHEUS_VERSION}.linux-amd64.tar.gz"
+    PROMETHEUS_DIR="prometheus-${PROMETHEUS_VERSION}.linux-amd64"
 
-    # Удаляем старые файлы
+    # Очистка старых файлов
     sudo rm -rf prometheus-*
 
     # Скачивание
@@ -89,19 +90,27 @@ install_server() {
         echo -e "${ORANGE}• Распаковываем архив...${NC}"
         if ! tar -xf "${PROMETHEUS_FILE}"; then
             errors+=("Ошибка распаковки Prometheus")
+        elif [ ! -d "${PROMETHEUS_DIR}" ]; then
+            errors+=("Директория ${PROMETHEUS_DIR} не найдена")
         else
-            cd "prometheus-${PROMETHEUS_VERSION}.linux-amd64" || errors+=("Ошибка перехода в директорию")
-            
-            # Установка
-            echo -e "${ORANGE}• Переносим файлы...${NC}"
-            sudo mv prometheus promtool /usr/local/bin/
-            sudo mkdir -p /etc/prometheus/consoles /etc/prometheus/console_libraries
-            sudo mv prometheus.yml /etc/prometheus/
-            [ -d consoles ] && sudo mv consoles/* /etc/prometheus/consoles/
-            [ -d console_libraries ] && sudo mv console_libraries/* /etc/prometheus/console_libraries/
+            cd "${PROMETHEUS_DIR}" || {
+                errors+=("Ошибка перехода в директорию ${PROMETHEUS_DIR}")
+                cd ..
+            }
 
-            # Настройка сервиса
-            echo "[Unit]
+            if [ ${#errors[@]} -eq 0 ]; then
+                # Установка
+                echo -e "${ORANGE}• Переносим файлы...${NC}"
+                sudo mv -v prometheus promtool /usr/local/bin/ || errors+=("Ошибка перемещения бинарных файлов")
+                sudo mkdir -p /etc/prometheus/consoles /etc/prometheus/console_libraries || errors+=("Ошибка создания директорий")
+                sudo mv -v prometheus.yml /etc/prometheus/ || errors+=("Ошибка перемещения конфига")
+                [ -d consoles ] && sudo mv -v consoles/* /etc/prometheus/consoles/ || errors+=("Ошибка перемещения консолей")
+                [ -d console_libraries ] && sudo mv -v console_libraries/* /etc/prometheus/console_libraries/ || errors+=("Ошибка перемещения библиотек")
+
+                # Настройка сервиса
+                echo -e "${ORANGE}• Настраиваем сервис...${NC}"
+                sudo tee /etc/systemd/system/prometheus.service >/dev/null <<EOF
+[Unit]
 Description=Prometheus
 After=network.target
 
@@ -113,22 +122,24 @@ ExecStart=/usr/local/bin/prometheus \
     --web.listen-address=0.0.0.0:9090
 
 [Install]
-WantedBy=multi-user.target" | sudo tee /etc/systemd/system/prometheus.service >/dev/null
+WantedBy=multi-user.target
+EOF
 
-            # Запуск
-            echo -e "${ORANGE}• Запускаем сервис...${NC}"
-            if ! (sudo systemctl daemon-reload && sudo systemctl enable --now prometheus); then
-                errors+=("Ошибка запуска Prometheus")
-            elif ! systemctl is-active --quiet prometheus; then
-                errors+=("Prometheus не запущен")
+                # Запуск
+                echo -e "${ORANGE}• Запускаем сервис...${NC}"
+                if ! (sudo systemctl daemon-reload && sudo systemctl enable --now prometheus); then
+                    errors+=("Ошибка запуска Prometheus")
+                elif ! systemctl is-active --quiet prometheus; then
+                    errors+=("Prometheus не запущен")
+                fi
             fi
-            
             cd ..
         fi
     fi
 
+    # Финальный статус
     if [ ${#errors[@]} -eq 0 ]; then
-        echo -e "\n${ORANGE}[✓] СЕРВЕР УСПЕШНО УСТАНОВЛЕН!${NC}\n"
+        echo -e "\n${GREEN}[✓] СЕРВЕР УСПЕШНО УСТАНОВЛЕН!${NC}\n"
     else
         echo -e "\n${RED}[✗] СЕРВЕР УСТАНОВЛЕН НЕ ПОЛНОСТЬЮ!${NC}"
         echo -e "${ORANGE}Проблемные компоненты:${NC}"
@@ -138,3 +149,69 @@ WantedBy=multi-user.target" | sudo tee /etc/systemd/system/prometheus.service >/
 }
 
 # ... остальные функции без изменений ...
+
+check_resource_usage() {  
+    echo -e "${ORANGE}=== Загрузка ресурсов ===${NC}"  
+    CPU_LOAD=$(top -b -n1 | grep "Cpu" | awk '{print $2 + $4}')
+    MEMORY_LOAD=$(free | grep Mem | awk '{printf "%.1f", $3/$2 * 100}')
+    TRAFFIC=$(vnstat --oneline | awk -F';' '{print $2}') 
+
+    echo -e "CPU: ${ORANGE}${CPU_LOAD}%${NC}"
+    echo -e "RAM: ${ORANGE}${MEMORY_LOAD}%${NC}"
+    echo -e "Трафик: ${ORANGE}${TRAFFIC}${NC}"
+}  
+
+check_nodes() {
+    echo -e "${ORANGE}=== Анализ нод ===${NC}"
+    
+    echo -e "\n${ORANGE}[*] Docker-контейнеры нод:${NC}"
+    docker ps -a --filter "name=node" --format "table {{.Names}}\t{{.Status}}\t{{.Image}}" || echo "Ноды не найдены"
+    
+    echo -e "\n${ORANGE}[*] Проверка аппаратных параметров:${NC}"
+    for volume in $(docker volume ls -q --filter "name=node"); do
+        echo -e "${GREEN}Обнаружен volume: $volume${NC}"
+        docker run --rm -v "$volume:/data" alpine sh -c '
+            echo "CPU cores: $(cat /data/cpu_cores)"
+            echo "RAM GB: $(cat /data/ram_gb)"
+            echo "SSD GB: $(cat /data/ssd_gb)"
+        ' 2>/dev/null || echo "Данные спуфинга не найдены"
+    done
+    
+    echo -e "\n${GREEN}[✓] Проверка завершена${NC}"
+}
+
+reboot_server() {  
+    echo -e "${ORANGE}[!] Инициирую перезагрузку...${NC}"  
+    sudo reboot  
+}  
+
+remove_server() {  
+    echo -e "${ORANGE}[!] Удаление сервера...${NC}"  
+    sudo systemctl disable --now prometheus 2>/dev/null
+    sudo rm -rf /etc/prometheus /var/lib/prometheus /usr/local/bin/prometheus* 2>/dev/null
+    
+    sudo apt remove -y nano file fail2ban 2>/dev/null
+    sudo apt autoremove -y
+    
+    echo -e "\n${RED}[!] Сервер удален!${NC}\n"  
+}  
+
+while true; do  
+    show_menu
+    read -p "Выберите опцию [1-6]: " option
+    
+    case $option in  
+        1) install_server ;;
+        2) check_resource_usage ;;
+        3) check_nodes ;;
+        4) reboot_server ;;
+        5) remove_server ;;
+        6) 
+            echo -e "${GREEN}Выход...${NC}"
+            break ;;
+        *) echo -e "${RED}Неверный выбор!${NC}" ;;
+    esac
+    
+    read -p "Нажмите Enter чтобы продолжить..."
+    clear
+done
