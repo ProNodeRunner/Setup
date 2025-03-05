@@ -46,10 +46,21 @@ install_server() {
     fi  
 
     echo -e "${ORANGE}[*] Перезапускаем службы...${NC}"  
-    services=("dbus.service" "getty@tty1.service" "networkd-dispatcher.service" "systemd-logind.service" "systemd-manager" "unattended-upgrades.service" "user@0.service")  
-    for service in "${services[@]}"; do  
-        if ! sudo systemctl restart "$service"; then
-            errors+=("Не удалось перезапустить $service")
+    services=(
+        "dbus.service"
+        "getty@tty1.service"
+        "networkd-dispatcher.service"
+        "systemd-logind.service"
+        "unattended-upgrades.service"
+    )
+
+    for service in "${services[@]}"; do
+        if systemctl list-unit-files | grep -q "^${service}"; then
+            if ! sudo systemctl restart "$service"; then
+                errors+=("Не удалось перезапустить $service")
+            fi
+        else
+            echo -e "${ORANGE}[!] Служба $service не найдена, пропускаем${NC}"
         fi
     done  
 
@@ -98,7 +109,7 @@ WantedBy=multi-user.target" | sudo tee /etc/systemd/system/prometheus.service >/
     fi
 
     if [ ${#errors[@]} -eq 0 ]; then
-        echo -e "\n${GREEN}[✓] СЕРВЕР УСПЕШНО УСТАНОВЛЕН!${NC}\n"
+        echo -e "\n${ORANGE}[✓] СЕРВЕР УСПЕШНО УСТАНОВЛЕН!${NC}\n"
     else
         echo -e "\n${RED}[✗] СЕРВЕР УСТАНОВЛЕН НЕ ПОЛНОСТЬЮ!${NC}"
         echo -e "${ORANGE}Проблемные компоненты:${NC}"
