@@ -93,14 +93,20 @@ check_resource_usage() {
 check_nodes() {
     echo -e "${ORANGE}=== Анализ нод ===${NC}"
     
-    echo -e "\n${ORANGE}[*] Сетевые подключения:${NC}"
-    sudo ss -tulpn | grep -E '808[0-9]|809[0-9]' | awk '{print "Порт:", $5, "Процесс:", $7}'
+    # Обнаружение докер-контейнеров
+    echo -e "\n${ORANGE}[*] Docker-контейнеры нод:${NC}"
+    docker ps -a --filter "name=node" --format "table {{.Names}}\t{{.Status}}\t{{.Image}}" || echo "Ноды не найдены"
     
-    echo -e "\n${ORANGE}[*] Docker-контейнеры:${NC}"
-    docker ps --format "table {{.Names}}\t{{.Status}}\t{{.Ports}}" | grep -E '808[0-9]|809[0-9]'
-    
-    echo -e "\n${ORANGE}[*] Системные сервисы:${NC}"
-    systemctl list-units --type=service | grep -E 'node|chain|testnet'
+    # Проверка спуфинга
+    echo -e "\n${ORANGE}[*] Проверка аппаратных параметров:${NC}"
+    for volume in $(docker volume ls -q --filter "name=node"); do
+        echo -e "${GREEN}Обнаружен volume: $volume${NC}"
+        docker run --rm -v "$volume:/data" alpine sh -c '
+            echo "CPU cores: $(cat /data/cpu_cores)"
+            echo "RAM GB: $(cat /data/ram_gb)"
+            echo "SSD GB: $(cat /data/ssd_gb)"
+        ' 2>/dev/null || echo "Данные спуфинга не найдены"
+    done
     
     echo -e "\n${GREEN}[✓] Проверка завершена${NC}"
 }
