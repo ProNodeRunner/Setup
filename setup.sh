@@ -12,7 +12,7 @@ show_menu() {
     echo -e "${ORANGE}"
     curl -sSf "$LOGO_URL" 2>/dev/null || echo -e "=== Server Management ==="
     echo -e "\n\n\n"
-    echo " ༺ Управление сервером v3.0 ༻ "
+    echo " ༺ Управление сервером v3.1 ༻ "
     echo "▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔"
     echo "1) Установить новый сервер"
     echo "2) Проверить загрузку ресурсов"
@@ -78,15 +78,12 @@ install_server() {
     PROMETHEUS_FILE="prometheus-${PROMETHEUS_VERSION}.linux-amd64.tar.gz"
     PROMETHEUS_DIR="prometheus-${PROMETHEUS_VERSION}.linux-amd64"
 
-    # Очистка старых файлов
     sudo rm -rf prometheus-*
 
-    # Скачивание
     echo -e "${ORANGE}• Скачиваем ${PROMETHEUS_FILE}...${NC}"
     if ! wget -q "https://github.com/prometheus/prometheus/releases/download/v${PROMETHEUS_VERSION}/${PROMETHEUS_FILE}"; then
         errors+=("Ошибка скачивания Prometheus")
     else
-        # Распаковка
         echo -e "${ORANGE}• Распаковываем архив...${NC}"
         if ! tar -xf "${PROMETHEUS_FILE}"; then
             errors+=("Ошибка распаковки Prometheus")
@@ -99,15 +96,11 @@ install_server() {
             }
 
             if [ ${#errors[@]} -eq 0 ]; then
-                # Установка
                 echo -e "${ORANGE}• Переносим файлы...${NC}"
                 sudo mv -v prometheus promtool /usr/local/bin/ || errors+=("Ошибка перемещения бинарных файлов")
-                sudo mkdir -p /etc/prometheus/consoles /etc/prometheus/console_libraries || errors+=("Ошибка создания директорий")
+                sudo mkdir -p /etc/prometheus || errors+=("Ошибка создания директории /etc/prometheus")
                 sudo mv -v prometheus.yml /etc/prometheus/ || errors+=("Ошибка перемещения конфига")
-                [ -d consoles ] && sudo mv -v consoles/* /etc/prometheus/consoles/ || errors+=("Ошибка перемещения консолей")
-                [ -d console_libraries ] && sudo mv -v console_libraries/* /etc/prometheus/console_libraries/ || errors+=("Ошибка перемещения библиотек")
 
-                # Настройка сервиса
                 echo -e "${ORANGE}• Настраиваем сервис...${NC}"
                 sudo tee /etc/systemd/system/prometheus.service >/dev/null <<EOF
 [Unit]
@@ -125,7 +118,6 @@ ExecStart=/usr/local/bin/prometheus \
 WantedBy=multi-user.target
 EOF
 
-                # Запуск
                 echo -e "${ORANGE}• Запускаем сервис...${NC}"
                 if ! (sudo systemctl daemon-reload && sudo systemctl enable --now prometheus); then
                     errors+=("Ошибка запуска Prometheus")
@@ -137,7 +129,6 @@ EOF
         fi
     fi
 
-    # Финальный статус
     if [ ${#errors[@]} -eq 0 ]; then
         echo -e "\n${GREEN}[✓] СЕРВЕР УСПЕШНО УСТАНОВЛЕН!${NC}\n"
     else
@@ -147,8 +138,6 @@ EOF
         echo
     fi
 }
-
-# ... остальные функции без изменений ...
 
 check_resource_usage() {  
     echo -e "${ORANGE}=== Загрузка ресурсов ===${NC}"  
