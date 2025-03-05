@@ -1,190 +1,142 @@
-#!/bin/bash  
+#!/bin/bash
 
-# Функция для установки нового сервера  
+# Конфигурация
+LOGO_URL="https://raw.githubusercontent.com/ProNodeRunner/Logo/main/Logo"
+ORANGE='\033[0;33m'
+GREEN='\033[0;32m'
+RED='\033[0;31m'
+NC='\033[0m'
+
+show_menu() {
+    clear
+    echo -e "${ORANGE}"
+    curl -sSf $LOGO_URL 2>/dev/null || echo -e "=== Server Management ==="
+    echo -e "\n\n\n"
+    echo " ༺ Управление сервером v2.0 ༻ "
+    echo "▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔"
+    echo "1) Установить новый сервер"
+    echo "2) Проверить загрузку ресурсов"
+    echo "3) Проверить ноды на сервере"
+    echo "4) Перезагрузить сервер"
+    echo "5) Удалить сервер"
+    echo "6) Выход"
+    echo -e "${NC}"
+}
+
 install_server() {  
-    echo "Обновляем пакеты..."  
+    echo -e "${ORANGE}[*] Обновляем пакеты...${NC}"  
     sudo DEBIAN_FRONTEND=noninteractive apt update && sudo DEBIAN_FRONTEND=noninteractive apt upgrade -y  
 
-    echo "Устанавливаем последние обновления ядра, если доступно..."  
+    echo -e "${ORANGE}[*] Устанавливаем обновления ядра...${NC}"  
     sudo DEBIAN_FRONTEND=noninteractive apt install -y linux-generic  
 
-    # Проверка текущего ядра  
     CURRENT_KERNEL=$(uname -r)  
     NEW_KERNEL=$(dpkg -l | grep linux-image | awk '{print $2}' | sort | tail -n 1 | sed 's/linux-image-//g')  
 
     if [[ "$CURRENT_KERNEL" != "$NEW_KERNEL" ]]; then  
-        echo "Доступно новое ядро: $NEW_KERNEL."  
-        echo "Следующее, что вы можете сделать, это перезагрузить сервер, чтобы загрузить новое ядро."  
+        echo -e "${ORANGE}[!] Доступно новое ядро: $NEW_KERNEL${NC}"  
     else  
-        echo "Текущая версия ядра актуальна: $CURRENT_KERNEL."  
+        echo -e "${GREEN}[✓] Ядро актуально: $CURRENT_KERNEL${NC}"  
     fi  
 
-    # Перезапускаем службы автоматом  
-    echo "Перезапускаем службы..."  
+    echo -e "${ORANGE}[*] Перезапускаем службы...${NC}"  
     services=("dbus.service" "getty@tty1.service" "networkd-dispatcher.service" "systemd-logind.service" "systemd-manager" "unattended-upgrades.service" "user@0.service")  
-
     for service in "${services[@]}"; do  
-        echo "Перезапускаем $service..."  
         sudo systemctl restart "$service"  
     done  
 
-    echo "Все службы успешно перезапущены."  
-
-    echo "Настраиваем machine-id..."  
+    echo -e "${ORANGE}[*] Настраиваем machine-id...${NC}"  
     sudo rm /etc/machine-id  
     sudo systemd-machine-id-setup  
-    cat /etc/machine-id  
 
-    echo "Устанавливаем текстовый редактор nano..."  
-    sudo DEBIAN_FRONTEND=noninteractive apt install -y nano  
+    echo -e "${ORANGE}[*] Устанавливаем компоненты...${NC}"  
+    sudo DEBIAN_FRONTEND=noninteractive apt install -y nano file fail2ban screen  
 
-    echo "Устанавливаем файл-менеджер..."  
-    sudo DEBIAN_FRONTEND=noninteractive apt install -y file   
-
-    echo "Устанавливаем fail2ban для защиты от атак..."  
-    sudo DEBIAN_FRONTEND=noninteractive apt install -y fail2ban  
-
-    # Установка screen
-    echo "Устанавливаем screen для управления сессиями..."
-    sudo DEBIAN_FRONTEND=noninteractive apt install -y screen
-
-    # Установка Prometheus  
-    echo "Устанавливаем Prometheus..."  
-
-    # Создайте директорию для Prometheus  
-    sudo mkdir -p /etc/prometheus  
-    sudo mkdir -p /var/lib/prometheus  
-
-    # Скачайте последнюю версию Prometheus  
-    PROMETHEUS_VERSION="3.2.0" # Укажите последнюю стабильную версию  
-    wget https://github.com/prometheus/prometheus/releases/download/v$PROMETHEUS_VERSION/prometheus-$PROMETHEUS_VERSION.darwin-amd64.tar.gz  
-    tar -xvf prometheus-$PROMETHEUS_VERSION.darwin-amd64.tar.gz  
+    echo -e "${ORANGE}[*] Устанавливаем Prometheus...${NC}"  
+    PROMETHEUS_VERSION="3.2.0"
+    wget -q https://github.com/prometheus/prometheus/releases/download/v$PROMETHEUS_VERSION/prometheus-$PROMETHEUS_VERSION.darwin-amd64.tar.gz  
+    tar -xf prometheus-$PROMETHEUS_VERSION.darwin-amd64.tar.gz  
     cd prometheus-$PROMETHEUS_VERSION.darwin-amd64 || return
 
-    # Переместите бинарные файлы в /usr/local/bin  
-    sudo mv prometheus /usr/local/bin/  
-    sudo mv promtool /usr/local/bin/  
+    sudo mv prometheus promtool /usr/local/bin/  
+    sudo mkdir -p /etc/prometheus  
+    sudo mv prometheus.yml consoles/ console_libraries/ /etc/prometheus/  
 
-    # Переместите конфигурационные файлы в /etc/prometheus  
-    sudo mv prometheus.yml /etc/prometheus/  
-    sudo mv consoles/ /etc/prometheus/  
-    sudo mv console_libraries/ /etc/prometheus/  
+    echo "[Unit]
+Description=Prometheus
+After=network.target
 
-    # Создать systemd service file для Prometheus  
-    echo "[Unit]  
-Description=Prometheus  
-Wants=network-online.target  
-After=network-online.target  
+[Service]
+User=root
+ExecStart=/usr/local/bin/prometheus --config.file=/etc/prometheus/prometheus.yml --storage.tsdb.path=/var/lib/prometheus/data
 
-[Service]  
-User=root  
-ExecStart=/usr/local/bin/prometheus --config.file=/etc/prometheus/prometheus.yml --storage.tsdb.path=/var/lib/prometheus/data  
+[Install]
+WantedBy=multi-user.target" | sudo tee /etc/systemd/system/prometheus.service >/dev/null
 
-[Install]  
-WantedBy=multi-user.target" | sudo tee /etc/systemd/system/prometheus.service  
-
-    # Запустите и включите Prometheus  
     sudo systemctl daemon-reload  
-    sudo systemctl start prometheus  
-    sudo systemctl enable prometheus  
+    sudo systemctl enable --now prometheus  
 
-    echo ""  # Отступ в одну строку  
-    # Зелёный цвет для успеха  
-    echo -e "\e[1;32mСЕРВЕР УСПЕШНО УСТАНОВЛЕН!\e[0m"
-    echo ""  # Одна пустая строка после финального сообщения  
-    echo "Выберите один из вариантов действий в меню."  
+    echo -e "\n${GREEN}[✓] СЕРВЕР УСПЕШНО УСТАНОВЛЕН!${NC}\n"  
 }  
 
-# Функция для проверки загрузки ресурсов  
 check_resource_usage() {  
-    echo "Загруженность процессора, оперативной памяти и интернет-трафик:"  
+    echo -e "${ORANGE}=== Загрузка ресурсов ===${NC}"  
+    CPU_LOAD=$(top -b -n1 | grep "Cpu" | awk '{print $2 + $4}')
+    MEMORY_LOAD=$(free | grep Mem | awk '{printf "%.1f", $3/$2 * 100}')
+    TRAFFIC=$(vnstat --oneline | awk -F';' '{print $2}') 
 
-    # Получение загрузки процессора  
-    CPU_LOAD=$(top -b -n1 | grep "Cpu" | awk '{print $2 + $4}') # Половина строк  
-    MEMORY_LOAD=$(free | grep Mem | awk '{print $3/$2 * 100}') # Процент использования памяти  
-    TRAFFIC=$(vnstat --oneline | awk -F';' '{print $2}') # Трафик  
-
-    echo "Загрузка процессора: ${CPU_LOAD}%"  
-    echo "Загрузка памяти: ${MEMORY_LOAD}%"  
-    echo "Интернет-трафик: ${TRAFFIC}"  
+    echo -e "CPU: ${ORANGE}${CPU_LOAD}%${NC}"
+    echo -e "RAM: ${ORANGE}${MEMORY_LOAD}%${NC}"
+    echo -e "Трафик: ${ORANGE}${TRAFFIC}${NC}"
 }  
 
-# Функция для проверки нод на сервере
 check_nodes() {
-    echo "=== Анализ нод на сервере ==="
-
-    # Проверка процессов
-    echo -e "\n[!] Запущенные процессы, использующие порты 8080 и выше:"
-    ps aux | grep -E '[n]ode|[d]aemon|[s]erver' | grep -E '808[0-9]|809[0-9]'
-
-    # Проверка сетевых подключений
-    echo -e "\n[!] Открытые порты 8080 и выше:"
-    sudo ss -tulpn | grep -E '808[0-9]|809[0-9]'
-
-    # Проверка конфигурационных файлов
-    echo -e "\n[!] Поиск конфигурационных файлов нод:"
-    find / -type d -name "config" 2>/dev/null | grep -E 'node|chain|testnet'
-
-    # Проверка Docker-контейнеров
-    echo -e "\n[!] Docker-контейнеры, использующие порты 8080 и выше:"
+    echo -e "${ORANGE}=== Анализ нод ===${NC}"
+    
+    echo -e "\n${ORANGE}[*] Сетевые подключения:${NC}"
+    sudo ss -tulpn | grep -E '808[0-9]|809[0-9]' | awk '{print "Порт:", $5, "Процесс:", $7}'
+    
+    echo -e "\n${ORANGE}[*] Docker-контейнеры:${NC}"
     docker ps --format "table {{.Names}}\t{{.Status}}\t{{.Ports}}" | grep -E '808[0-9]|809[0-9]'
-
-    # Проверка системных сервисов
-    echo -e "\n[!] Системные сервисы, связанные с нодами:"
+    
+    echo -e "\n${ORANGE}[*] Системные сервисы:${NC}"
     systemctl list-units --type=service | grep -E 'node|chain|testnet'
-
-    # Проверка логов
-    echo -e "\n[!] Логи нод:"
-    sudo journalctl -u *node* -u *chain* -u *testnet* -n 100 --no-pager
-
-    echo -e "\n=== Поиск завершен ==="
+    
+    echo -e "\n${GREEN}[✓] Проверка завершена${NC}"
 }
 
-# Функция для перезагрузки сервера  
 reboot_server() {  
-    echo "Перезагрузка сервера..."  
+    echo -e "${ORANGE}[!] Инициирую перезагрузку...${NC}"  
     sudo reboot  
 }  
 
-# Функция для удаления сервера  
 remove_server() {  
-    echo "Удаление сервера..."  
-    # Остановка Prometheus  
-    sudo systemctl stop prometheus  
-    sudo systemctl disable prometheus  
-    sudo rm -rf /etc/prometheus /var/lib/prometheus /usr/local/bin/prometheus /usr/local/bin/promtool /etc/systemd/system/prometheus.service  
-
-    # Удаление установленных пакетов  
-    sudo apt remove -y nano file ufw fail2ban curl git htop vnstat  
-    sudo apt autoremove -y  
-
-    echo "Сервер удален!"  
+    echo -e "${ORANGE}[!] Удаление сервера...${NC}"  
+    sudo systemctl disable --now prometheus
+    sudo rm -rf /etc/prometheus /var/lib/prometheus /usr/local/bin/prometheus*
+    
+    sudo apt remove -y nano file fail2ban 2>/dev/null
+    sudo apt autoremove -y
+    
+    echo -e "\n${RED}[!] Сервер удален!${NC}\n"  
 }  
 
-# Основное меню  
 while true; do  
-    echo "Выберите опцию:"  
-    echo "1. Установить новый сервер"  
-    echo "2. Проверить загрузку ресурсов"  
-    echo "3. Проверить ноды на сервере"      # НОВЫЙ ПУНКТ
-    echo "4. Перезагрузить сервер"           # СМЕЩЁН
-    echo "5. Удалить сервер"                 # СМЕЩЁН
-    echo "6. Выход"                          # СМЕЩЁН
-
-    read -p "Введите номер опции [1-6]: " option  
-    option=$(echo $option | tr -d '[:space:]')  
-
+    show_menu
+    read -p "Выберите опцию [1-6]: " option
+    
     case $option in  
-        1) install_server ;;  
-        2) check_resource_usage ;;  
-        3) check_nodes ;;                   # НОВЫЙ КЕЙС
-        4) reboot_server ;;                 # СМЕЩЁН
-        5) remove_server ;;                 # СМЕЩЁН
-        6)                                  # СМЕЩЁН
-            echo "Выход."  
-            break  
-            ;;  
-        *) echo "Неверный ввод, попробуйте снова." ;;  
-    esac  
-    sleep 1  
+        1) install_server ;;
+        2) check_resource_usage ;;
+        3) check_nodes ;;
+        4) reboot_server ;;
+        5) remove_server ;;
+        6) 
+            echo -e "${GREEN}Выход...${NC}"
+            break ;;
+        *) echo -e "${RED}Неверный выбор!${NC}" ;;
+    esac
+    
+    read -p "Нажмите Enter чтобы продолжить..."
+    clear
 done
