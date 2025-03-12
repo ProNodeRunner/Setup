@@ -23,7 +23,7 @@ show_menu() {
     echo -e "${NC}"
 }
 
-install_server() {  
+install_server() {
     local errors=()
     
     echo -e "${ORANGE}[*] Обновляем пакеты...${NC}"  
@@ -69,7 +69,7 @@ install_server() {
     fi
 
     echo -e "${ORANGE}[*] Устанавливаем компоненты...${NC}"  
-    if ! sudo DEBIAN_FRONTEND=noninteractive apt install -y wget tar nano file fail2ban screen vnstat; then
+    if ! sudo DEBIAN_FRONTEND=noninteractive apt install -y wget tar nano file fail2ban screen vnstat ifstat net-tools; then
         errors+=("Ошибка установки базовых компонентов")
     fi
 
@@ -130,7 +130,7 @@ EOF
     fi
 
     if [ ${#errors[@]} -eq 0 ]; then
-        echo -e "\n${ORANGE}[✓] СЕРВЕР УСПЕШНО УСТАНОВЛЕН!${NC}\n"  # Исправлено на ORANGE
+        echo -e "\n${ORANGE}[✓] СЕРВЕР УСПЕШНО УСТАНОВЛЕН!${NC}\n"
     else
         echo -e "\n${RED}[✗] СЕРВЕР УСТАНОВЛЕН НЕ ПОЛНОСТЬЮ!${NC}"
         echo -e "${ORANGE}Проблемные компоненты:${NC}"
@@ -151,18 +151,17 @@ check_resource_usage() {
 
     # Универсальный поиск всех CLI-нод на сервере
     echo -e "${ORANGE}=== Нагрузка по нодам (CLI-клиенты) ===${NC}"
-    ps -eo pid,comm,%cpu,%mem --sort=-%cpu | grep -E "(node|validator|daemon|client|service|chain)" | head -n 10 | awk '{printf "PID: %s | Процесс: %s | CPU: %s%% | RAM: %s%%\n", $1, $2, $3, $4}'
+    ps -eo pid,comm,%cpu,%mem --sort=-%cpu | grep -E "(node|validator|daemon|client|service|chain|miner|proxy|consensus|worker|relay|beacon)" | head -n 10 | awk '{printf "PID: %s | Процесс: %s | CPU: %s%% | RAM: %s%%\n", $1, $2, $3, $4}'
 
     # Проверка нагрузки по screen-сессиям
     if command -v screen &>/dev/null && screen -ls | grep -q "."; then
         echo -e "${ORANGE}=== Нагрузка по screen-сессиям ===${NC}"
-        while read -r line; do
-            SESSION=$(echo "$line" | awk '{print $1}')
-            PID=$(echo "$line" | awk '{print $1}' | cut -d'.' -f1)
-            CPU=$(ps -p $PID -o %cpu --no-headers)
-            MEM=$(ps -p $PID -o %mem --no-headers)
-            echo -e "Сессия: $SESSION | CPU: ${ORANGE}${CPU}%${NC} | RAM: ${ORANGE}${MEM}%${NC}"
-        done < <(screen -ls | grep -E "(node|validator|daemon|client|service|chain)")
+        screen -ls | grep -oE '[0-9]+[.][^ ]+' | while read -r session; do
+            PID=$(screen -ls | grep "$session" | awk '{print $1}' | cut -d'.' -f1)
+            CPU=$(ps -p $PID -o %cpu --no-headers | awk '{print $1}')
+            MEM=$(ps -p $PID -o %mem --no-headers | awk '{print $1}')
+            echo -e "Сессия: ${ORANGE}$session${NC} | CPU: ${ORANGE}${CPU:-0}%${NC} | RAM: ${ORANGE}${MEM:-0}%${NC}"
+        done
     fi
 
     # Проверка нагрузки по Docker-контейнерам
@@ -171,14 +170,32 @@ check_resource_usage() {
         docker stats --no-stream --format "table {{.Name}}\t{{.CPUPerc}}\t{{.MemUsage}}"
     fi
 
-    # Трафик без ifstat (используем /proc/net/dev)
-    echo -e "${ORANGE}=== Сетевой трафик ===${NC}"
-    RX_BYTES=$(cat /proc/net/dev | awk '/eth0/ {print $2}')
-    TX_BYTES=$(cat /proc/net/dev | awk '/eth0/ {print $10}')
-    RX_MB=$(echo "$RX_BYTES / 1048576" | bc)
-    TX_MB=$(echo "$TX_BYTES / 1048576" | bc)
-    echo -e "Входящий трафик: ${ORANGE}${RX_MB} MB${NC}"
-    echo -e "Исходящий трафик: ${ORANGE}${TX_MB} MB${NC}"
+    # Проверка общего трафика за 30 дней
+    if command -v vnstat &>/dev/null; then
+        echo -e "${ORANGE}=== Общий трафик за 30 дней ===${NC}"
+        vnstat -m | grep "$(date +'%Y-%m')" | awk '{printf "Получено: %s | Отправлено: %s | Всего: %s\n", $3, $5, $8}'
+    else
+        echo -e "${RED}vnstat не установлен!${NC}"
+    fi
+
+    # Проверка текущей скорости трафика
+    if command -v ifstat &>/dev/null; then
+        echo -e "${ORANGE}=== Текущая скорость трафика ===${NC}"
+        ifstat -i eth0 1 1 | awk 'NR==3 {print "↓ " $1 " KB/s  |  ↑ " $2 " KB/s"}'
+    else
+        RX1=$(cat /sys/class/net/eth0/statistics/rx_bytes)
+        TX1=$(cat /sys/class/net/eth0/statistics/tx_bytes)
+        sleep 1
+        RX2=$(cat /sys/class/net/eth0/statistics/rx_bytes)
+        TX2=$(cat /sys/class/net/eth0/statistics/tx_bytes)
+
+        RX_SPEED=$(( (RX2 - RX1) / 1024 ))
+        TX_SPEED=$(( (TX2 - TX1) / 1024 ))
+
+        echo -e "${ORANGE}=== Текущая скорость трафика ===${NC}"
+        echo -e "Скорость загрузки: ${ORANGE}${RX_SPEED} KB/s${NC}"
+        echo -e "Скорость выгрузки: ${ORANGE}${TX_SPEED} KB/s${NC}"
+    fi
 }
 
 check_nodes() {
