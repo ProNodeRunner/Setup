@@ -176,20 +176,20 @@ check_resource_usage() {
         NET_IF="eth0"  # Запасной вариант
     fi
 
-    # Проверка общего трафика за 30 дней
+    # Проверка общего трафика за 30 дней (с единицами измерения)
     if command -v vnstat &>/dev/null; then
         echo -e "${ORANGE}=== Общий трафик за 30 дней ===${NC}"
-        TRAFFIC_DATA=$(vnstat -m | grep "$(date +'%Y-%m')")
-        if [[ -n "$TRAFFIC_DATA" ]]; then
-            RECEIVED=$(echo "$TRAFFIC_DATA" | awk '{print $3}')
-            SENT=$(echo "$TRAFFIC_DATA" | awk '{print $5}')
-            TOTAL=$(echo "$TRAFFIC_DATA" | awk '{print $8}')
+        TRAFFIC_JSON=$(vnstat --json m 2>/dev/null)
+        if [[ -z "$TRAFFIC_JSON" ]]; then
+            echo -e "${RED}Сбор данных... Подождите несколько часов.${NC}"
+        else
+            RECEIVED=$(echo "$TRAFFIC_JSON" | jq -r '.interfaces[0].traffic.month[0].rx' | awk '{printf "%.2f MB", $1/1024}')
+            SENT=$(echo "$TRAFFIC_JSON" | jq -r '.interfaces[0].traffic.month[0].tx' | awk '{printf "%.2f MB", $1/1024}')
+            TOTAL=$(echo "$TRAFFIC_JSON" | jq -r '.interfaces[0].traffic.month[0].total' | awk '{printf "%.2f MB", $1/1024}')
 
             echo -e "Получено: ${ORANGE}${RECEIVED}${NC}"
             echo -e "Отправлено: ${ORANGE}${SENT}${NC}"
             echo -e "Всего: ${ORANGE}${TOTAL}${NC}"
-        else
-            echo -e "${RED}vnstat ещё не собрал данные. Подождите несколько часов.${NC}"
         fi
     else
         echo -e "${RED}vnstat не установлен!${NC}"
@@ -203,13 +203,15 @@ check_resource_usage() {
     RX2=$(cat /sys/class/net/$NET_IF/statistics/rx_bytes)
     TX2=$(cat /sys/class/net/$NET_IF/statistics/tx_bytes)
 
-    RX_SPEED=$(( (RX2 - RX1) / 1024 / 1024 / 10 ))  # МБ/с
-    TX_SPEED=$(( (TX2 - TX1) / 1024 / 1024 / 10 ))  # МБ/с
+    RX_SPEED=$(awk "BEGIN {printf \"%.2f\", ($RX2 - $RX1) / 1024 / 1024 / 10}")
+    TX_SPEED=$(awk "BEGIN {printf \"%.2f\", ($TX2 - $TX1) / 1024 / 1024 / 10}")
+
+    [[ $(echo "$RX_SPEED < 0.1" | bc) -eq 1 ]] && RX_SPEED="< 0.1"
+    [[ $(echo "$TX_SPEED < 0.1" | bc) -eq 1 ]] && TX_SPEED="< 0.1"
 
     echo -e "Скорость загрузки: ${ORANGE}${RX_SPEED} MB/s${NC}"
     echo -e "Скорость выгрузки: ${ORANGE}${TX_SPEED} MB/s${NC}"
 }
-
 
 check_nodes() {
     echo -e "${ORANGE}=== Анализ нод ===${NC}"
