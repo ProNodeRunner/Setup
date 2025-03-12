@@ -142,37 +142,43 @@ EOF
 check_resource_usage() {
     echo -e "${ORANGE}=== Загрузка ресурсов ===${NC}"
 
-    # CPU / RAM общего сервера
+    # Общая загрузка CPU и RAM сервера
     CPU_LOAD=$(grep 'cpu ' /proc/stat | awk '{usage=($2+$4)*100/($2+$4+$5)} END {print usage}')
     MEMORY_LOAD=$(free | awk '/Mem:/ {printf "%.1f", $3/$2 * 100}')
 
-    # Если Docker есть → статистика контейнеров
+    echo -e "CPU сервера: ${ORANGE}${CPU_LOAD}%${NC}"
+    echo -e "RAM сервера: ${ORANGE}${MEMORY_LOAD}%${NC}"
+
+    # Универсальный поиск всех CLI-нод на сервере
+    echo -e "${ORANGE}=== Нагрузка по нодам (CLI-клиенты) ===${NC}"
+    ps -eo pid,comm,%cpu,%mem --sort=-%cpu | grep -E "(node|validator|daemon|client|service|chain)" | head -n 10 | awk '{printf "PID: %s | Процесс: %s | CPU: %s%% | RAM: %s%%\n", $1, $2, $3, $4}'
+
+    # Проверка нагрузки по screen-сессиям
+    if command -v screen &>/dev/null && screen -ls | grep -q "."; then
+        echo -e "${ORANGE}=== Нагрузка по screen-сессиям ===${NC}"
+        while read -r line; do
+            SESSION=$(echo "$line" | awk '{print $1}')
+            PID=$(echo "$line" | awk '{print $1}' | cut -d'.' -f1)
+            CPU=$(ps -p $PID -o %cpu --no-headers)
+            MEM=$(ps -p $PID -o %mem --no-headers)
+            echo -e "Сессия: $SESSION | CPU: ${ORANGE}${CPU}%${NC} | RAM: ${ORANGE}${MEM}%${NC}"
+        done < <(screen -ls | grep -E "(node|validator|daemon|client|service|chain)")
+    fi
+
+    # Проверка нагрузки по Docker-контейнерам
     if command -v docker &>/dev/null; then
-        echo -e "${ORANGE}=== Нагрузка по Docker-контейнерам ===${NC}"
+        echo -e "${ORANGE}=== Нагрузка по Docker-нодам ===${NC}"
         docker stats --no-stream --format "table {{.Name}}\t{{.CPUPerc}}\t{{.MemUsage}}"
     fi
 
-    # Если есть screen сессии → статистика по ним
-    if command -v screen &>/dev/null && screen -ls | grep -q "node_"; then
-        echo -e "${ORANGE}=== Нагрузка по screen-сессиям ===${NC}"
-        for session in $(screen -ls | grep "node_" | awk '{print $1}'); do
-            PID=$(screen -ls | grep "$session" | awk '{print $1}' | cut -d'.' -f1)
-            CPU=$(ps -p $PID -o %cpu --no-headers)
-            MEM=$(ps -p $PID -o %mem --no-headers)
-            echo -e "Сессия: $session | CPU: ${ORANGE}${CPU}%${NC} | RAM: ${ORANGE}${MEM}%${NC}"
-        done
-    fi
-
-    # Трафик в реальном времени (за 1 секунду)
-    if command -v ifstat &>/dev/null; then
-        TRAFFIC=$(ifstat -i eth0 1 1 | awk 'NR==3 {print "↓ " $1 " KB/s  |  ↑ " $2 " KB/s"}')
-    else
-        TRAFFIC="Требуется ifstat (sudo apt install ifstat)"
-    fi
-
-    echo -e "CPU сервера: ${ORANGE}${CPU_LOAD}%${NC}"
-    echo -e "RAM сервера: ${ORANGE}${MEMORY_LOAD}%${NC}"
-    echo -e "Трафик: ${ORANGE}${TRAFFIC}${NC}"
+    # Трафик без ifstat (используем /proc/net/dev)
+    echo -e "${ORANGE}=== Сетевой трафик ===${NC}"
+    RX_BYTES=$(cat /proc/net/dev | awk '/eth0/ {print $2}')
+    TX_BYTES=$(cat /proc/net/dev | awk '/eth0/ {print $10}')
+    RX_MB=$(echo "$RX_BYTES / 1048576" | bc)
+    TX_MB=$(echo "$TX_BYTES / 1048576" | bc)
+    echo -e "Входящий трафик: ${ORANGE}${RX_MB} MB${NC}"
+    echo -e "Исходящий трафик: ${ORANGE}${TX_MB} MB${NC}"
 }
 
 check_nodes() {
