@@ -170,33 +170,45 @@ check_resource_usage() {
         docker stats --no-stream --format "table {{.Name}}\t{{.CPUPerc}}\t{{.MemUsage}}"
     fi
 
+    # Определяем сетевой интерфейс (может быть не eth0)
+    NET_IF=$(ip -o -4 route show to default | awk '{print $5}')
+    if [[ -z "$NET_IF" ]]; then
+        NET_IF="eth0"  # Запасной вариант
+    fi
+
     # Проверка общего трафика за 30 дней
     if command -v vnstat &>/dev/null; then
         echo -e "${ORANGE}=== Общий трафик за 30 дней ===${NC}"
-        vnstat -m | grep "$(date +'%Y-%m')" | awk '{printf "Получено: %s | Отправлено: %s | Всего: %s\n", $3, $5, $8}'
+        TRAFFIC_DATA=$(vnstat -m | grep "$(date +'%Y-%m')")
+        if [[ -n "$TRAFFIC_DATA" ]]; then
+            echo "$TRAFFIC_DATA" | awk '{printf "Получено: %s | Отправлено: %s | Всего: %s\n", $3, $5, $8}'
+        else
+            echo -e "${RED}vnstat ещё не собрал данные. Подождите несколько часов.${NC}"
+        fi
     else
         echo -e "${RED}vnstat не установлен!${NC}"
     fi
 
     # Проверка текущей скорости трафика
+    echo -e "${ORANGE}=== Текущая скорость трафика ===${NC}"
     if command -v ifstat &>/dev/null; then
-        echo -e "${ORANGE}=== Текущая скорость трафика ===${NC}"
-        ifstat -i eth0 1 1 | awk 'NR==3 {print "↓ " $1 " KB/s  |  ↑ " $2 " KB/s"}'
+        ifstat -i "$NET_IF" 1 1 | awk 'NR==3 {print "↓ " $1 " KB/s  |  ↑ " $2 " KB/s"}'
     else
-        RX1=$(cat /sys/class/net/eth0/statistics/rx_bytes)
-        TX1=$(cat /sys/class/net/eth0/statistics/tx_bytes)
+        # Альтернативный метод без ifstat
+        RX1=$(cat /sys/class/net/$NET_IF/statistics/rx_bytes)
+        TX1=$(cat /sys/class/net/$NET_IF/statistics/tx_bytes)
         sleep 1
-        RX2=$(cat /sys/class/net/eth0/statistics/rx_bytes)
-        TX2=$(cat /sys/class/net/eth0/statistics/tx_bytes)
+        RX2=$(cat /sys/class/net/$NET_IF/statistics/rx_bytes)
+        TX2=$(cat /sys/class/net/$NET_IF/statistics/tx_bytes)
 
         RX_SPEED=$(( (RX2 - RX1) / 1024 ))
         TX_SPEED=$(( (TX2 - TX1) / 1024 ))
 
-        echo -e "${ORANGE}=== Текущая скорость трафика ===${NC}"
         echo -e "Скорость загрузки: ${ORANGE}${RX_SPEED} KB/s${NC}"
         echo -e "Скорость выгрузки: ${ORANGE}${TX_SPEED} KB/s${NC}"
     fi
 }
+
 
 check_nodes() {
     echo -e "${ORANGE}=== Анализ нод ===${NC}"
