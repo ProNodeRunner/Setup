@@ -12,8 +12,8 @@ show_menu() {
     echo -e "${ORANGE}"
     curl -sSf "$LOGO_URL" 2>/dev/null || echo -e "=== Server Management ==="
     echo -e "\n\n\n"
-    echo " ༺ Управление сервером по кайфу v2.0 ༻ "
-    echo "============================================"
+    echo " ༺ Управление сервером по кайфу v3.0 ༻ "
+    echo "======================================="
     echo "1) Установить новый сервер"
     echo "2) Проверить загрузку ресурсов"
     echo "3) Проверить ноды на сервере"
@@ -139,16 +139,41 @@ EOF
     fi
 }
 
-check_resource_usage() {  
-    echo -e "${ORANGE}=== Загрузка ресурсов ===${NC}"  
-    CPU_LOAD=$(top -b -n1 | grep "Cpu" | awk '{print $2 + $4}')
-    MEMORY_LOAD=$(free | grep Mem | awk '{printf "%.1f", $3/$2 * 100}')
-    TRAFFIC=$(vnstat --oneline | awk -F';' '{print $2}') 
+check_resource_usage() {
+    echo -e "${ORANGE}=== Загрузка ресурсов ===${NC}"
 
-    echo -e "CPU: ${ORANGE}${CPU_LOAD}%${NC}"
-    echo -e "RAM: ${ORANGE}${MEMORY_LOAD}%${NC}"
+    # CPU / RAM общего сервера
+    CPU_LOAD=$(grep 'cpu ' /proc/stat | awk '{usage=($2+$4)*100/($2+$4+$5)} END {print usage}')
+    MEMORY_LOAD=$(free | awk '/Mem:/ {printf "%.1f", $3/$2 * 100}')
+
+    # Если Docker есть → статистика контейнеров
+    if command -v docker &>/dev/null; then
+        echo -e "${ORANGE}=== Нагрузка по Docker-контейнерам ===${NC}"
+        docker stats --no-stream --format "table {{.Name}}\t{{.CPUPerc}}\t{{.MemUsage}}"
+    fi
+
+    # Если есть screen сессии → статистика по ним
+    if command -v screen &>/dev/null && screen -ls | grep -q "node_"; then
+        echo -e "${ORANGE}=== Нагрузка по screen-сессиям ===${NC}"
+        for session in $(screen -ls | grep "node_" | awk '{print $1}'); do
+            PID=$(screen -ls | grep "$session" | awk '{print $1}' | cut -d'.' -f1)
+            CPU=$(ps -p $PID -o %cpu --no-headers)
+            MEM=$(ps -p $PID -o %mem --no-headers)
+            echo -e "Сессия: $session | CPU: ${ORANGE}${CPU}%${NC} | RAM: ${ORANGE}${MEM}%${NC}"
+        done
+    fi
+
+    # Трафик в реальном времени (за 1 секунду)
+    if command -v ifstat &>/dev/null; then
+        TRAFFIC=$(ifstat -i eth0 1 1 | awk 'NR==3 {print "↓ " $1 " KB/s  |  ↑ " $2 " KB/s"}')
+    else
+        TRAFFIC="Требуется ifstat (sudo apt install ifstat)"
+    fi
+
+    echo -e "CPU сервера: ${ORANGE}${CPU_LOAD}%${NC}"
+    echo -e "RAM сервера: ${ORANGE}${MEMORY_LOAD}%${NC}"
     echo -e "Трафик: ${ORANGE}${TRAFFIC}${NC}"
-}  
+}
 
 check_nodes() {
     echo -e "${ORANGE}=== Анализ нод ===${NC}"
