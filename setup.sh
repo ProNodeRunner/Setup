@@ -183,13 +183,24 @@ check_resource_usage() {
         if [[ -z "$TRAFFIC_JSON" ]]; then
             echo -e "${RED}Сбор данных... Подождите несколько часов.${NC}"
         else
-            RECEIVED=$(echo "$TRAFFIC_JSON" | jq -r '.interfaces[0].traffic.month[0].rx' | awk '{printf "%.2f MB", $1/1024}')
-            SENT=$(echo "$TRAFFIC_JSON" | jq -r '.interfaces[0].traffic.month[0].tx' | awk '{printf "%.2f MB", $1/1024}')
-            TOTAL=$(echo "$TRAFFIC_JSON" | jq -r '.interfaces[0].traffic.month[0].total' | awk '{printf "%.2f MB", $1/1024}')
+            RX_BYTES=$(echo "$TRAFFIC_JSON" | jq -r '.interfaces[0].traffic.month[0].rx')
+            TX_BYTES=$(echo "$TRAFFIC_JSON" | jq -r '.interfaces[0].traffic.month[0].tx')
+            TOTAL_BYTES=$(echo "$TRAFFIC_JSON" | jq -r '.interfaces[0].traffic.month[0].total')
 
-            echo -e "Получено: ${ORANGE}${RECEIVED}${NC}"
-            echo -e "Отправлено: ${ORANGE}${SENT}${NC}"
-            echo -e "Всего: ${ORANGE}${TOTAL}${NC}"
+            format_bytes() {
+                local bytes=$1
+                if (( bytes >= 1073741824 )); then
+                    echo "$(awk "BEGIN {printf \"%.2f GB\", $bytes/1073741824}")"
+                elif (( bytes >= 1048576 )); then
+                    echo "$(awk "BEGIN {printf \"%.2f MB\", $bytes/1048576}")"
+                else
+                    echo "${bytes} KB"
+                fi
+            }
+
+            echo -e "Получено: ${ORANGE}$(format_bytes $RX_BYTES)${NC}"
+            echo -e "Отправлено: ${ORANGE}$(format_bytes $TX_BYTES)${NC}"
+            echo -e "Всего: ${ORANGE}$(format_bytes $TOTAL_BYTES)${NC}"
         fi
     else
         echo -e "${RED}vnstat не установлен!${NC}"
