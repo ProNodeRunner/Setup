@@ -181,7 +181,13 @@ check_resource_usage() {
         echo -e "${ORANGE}=== Общий трафик за 30 дней ===${NC}"
         TRAFFIC_DATA=$(vnstat -m | grep "$(date +'%Y-%m')")
         if [[ -n "$TRAFFIC_DATA" ]]; then
-            echo "$TRAFFIC_DATA" | awk '{printf "Получено: %s | Отправлено: %s | Всего: %s\n", $3, $5, $8}'
+            RECEIVED=$(echo "$TRAFFIC_DATA" | awk '{print $3}')
+            SENT=$(echo "$TRAFFIC_DATA" | awk '{print $5}')
+            TOTAL=$(echo "$TRAFFIC_DATA" | awk '{print $8}')
+
+            echo -e "Получено: ${ORANGE}${RECEIVED}${NC}"
+            echo -e "Отправлено: ${ORANGE}${SENT}${NC}"
+            echo -e "Всего: ${ORANGE}${TOTAL}${NC}"
         else
             echo -e "${RED}vnstat ещё не собрал данные. Подождите несколько часов.${NC}"
         fi
@@ -189,24 +195,19 @@ check_resource_usage() {
         echo -e "${RED}vnstat не установлен!${NC}"
     fi
 
-    # Проверка текущей скорости трафика
-    echo -e "${ORANGE}=== Текущая скорость трафика ===${NC}"
-    if command -v ifstat &>/dev/null; then
-        ifstat -i "$NET_IF" 1 1 | awk 'NR==3 {print "↓ " $1 " KB/s  |  ↑ " $2 " KB/s"}'
-    else
-        # Альтернативный метод без ifstat
-        RX1=$(cat /sys/class/net/$NET_IF/statistics/rx_bytes)
-        TX1=$(cat /sys/class/net/$NET_IF/statistics/tx_bytes)
-        sleep 1
-        RX2=$(cat /sys/class/net/$NET_IF/statistics/rx_bytes)
-        TX2=$(cat /sys/class/net/$NET_IF/statistics/tx_bytes)
+    # Проверка текущей скорости трафика (замер за 10 секунд)
+    echo -e "${ORANGE}=== Текущая скорость трафика (замер за 10 сек) ===${NC}"
+    RX1=$(cat /sys/class/net/$NET_IF/statistics/rx_bytes)
+    TX1=$(cat /sys/class/net/$NET_IF/statistics/tx_bytes)
+    sleep 10
+    RX2=$(cat /sys/class/net/$NET_IF/statistics/rx_bytes)
+    TX2=$(cat /sys/class/net/$NET_IF/statistics/tx_bytes)
 
-        RX_SPEED=$(( (RX2 - RX1) / 1024 ))
-        TX_SPEED=$(( (TX2 - TX1) / 1024 ))
+    RX_SPEED=$(( (RX2 - RX1) / 1024 / 1024 / 10 ))  # МБ/с
+    TX_SPEED=$(( (TX2 - TX1) / 1024 / 1024 / 10 ))  # МБ/с
 
-        echo -e "Скорость загрузки: ${ORANGE}${RX_SPEED} KB/s${NC}"
-        echo -e "Скорость выгрузки: ${ORANGE}${TX_SPEED} KB/s${NC}"
-    fi
+    echo -e "Скорость загрузки: ${ORANGE}${RX_SPEED} MB/s${NC}"
+    echo -e "Скорость выгрузки: ${ORANGE}${TX_SPEED} MB/s${NC}"
 }
 
 
