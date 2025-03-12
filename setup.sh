@@ -69,7 +69,7 @@ install_server() {
     fi
 
     echo -e "${ORANGE}[*] Устанавливаем компоненты...${NC}"  
-    if ! sudo DEBIAN_FRONTEND=noninteractive apt install -y wget tar nano file fail2ban screen vnstat ifstat net-tools; then
+    if ! sudo DEBIAN_FRONTEND=noninteractive apt install -y wget tar nano file fail2ban screen vnstat ifstat net-tools jq; then
         errors+=("Ошибка установки базовых компонентов")
     fi
 
