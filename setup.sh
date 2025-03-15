@@ -142,18 +142,20 @@ EOF
 check_resource_usage() {
     echo -e "${ORANGE}=== Загрузка ресурсов ===${NC}"
 
-    # Общая загрузка CPU и RAM сервера
-    CPU_LOAD=$(grep 'cpu ' /proc/stat | awk '{usage=($2+$4)*100/($2+$4+$5)} END {print usage}')
+    # 1️⃣ CPU сервера (исправленный расчет)
+    CPU_LOAD=$(top -bn1 | grep "Cpu(s)" | awk '{print $2 + $4}')
+    STEAL_TIME=$(top -bn1 | grep "Cpu(s)" | awk '{print $8}')
     MEMORY_LOAD=$(free | awk '/Mem:/ {printf "%.1f", $3/$2 * 100}')
 
     echo -e "CPU сервера: ${ORANGE}${CPU_LOAD}%${NC}"
     echo -e "RAM сервера: ${ORANGE}${MEMORY_LOAD}%${NC}"
+    echo -e "Steal Time (украденный CPU на VPS): ${RED}${STEAL_TIME}%${NC}"
 
-    # Универсальный поиск всех CLI-нод на сервере
+    # 2️⃣ Нагрузка по CLI-нодам (улучшено)
     echo -e "${ORANGE}=== Нагрузка по нодам (CLI-клиенты) ===${NC}"
-    ps -eo pid,comm,%cpu,%mem --sort=-%cpu | grep -E "(node|validator|daemon|client|service|chain|miner|proxy|consensus|worker|relay|beacon)" | head -n 10 | awk '{printf "PID: %s | Процесс: %s | CPU: %s%% | RAM: %s%%\n", $1, $2, $3, $4}'
+    ps -eo pid,comm,%cpu,%mem --sort=-%cpu | head -n 15 | awk '{printf "PID: %s | Процесс: %s | CPU: %s%% | RAM: %s%%\n", $1, $2, $3, $4}'
 
-    # Проверка нагрузки по screen-сессиям
+    # 3️⃣ Нагрузка по screen-сессиям
     if command -v screen &>/dev/null && screen -ls | grep -q "."; then
         echo -e "${ORANGE}=== Нагрузка по screen-сессиям ===${NC}"
         screen -ls | grep -oE '[0-9]+[.][^ ]+' | while read -r session; do
@@ -164,19 +166,17 @@ check_resource_usage() {
         done
     fi
 
-    # Проверка нагрузки по Docker-контейнерам
+    # 4️⃣ Нагрузка по Docker-контейнерам (исправлено)
     if command -v docker &>/dev/null; then
         echo -e "${ORANGE}=== Нагрузка по Docker-нодам ===${NC}"
         docker stats --no-stream --format "table {{.Name}}\t{{.CPUPerc}}\t{{.MemUsage}}"
     fi
 
-    # Определяем сетевой интерфейс (может быть не eth0)
-    NET_IF=$(ip -o -4 route show to default | awk '{print $5}')
-    if [[ -z "$NET_IF" ]]; then
-        NET_IF="eth0"  # Запасной вариант
-    fi
+    # 5️⃣ Проверка Steal Time (если CPU воруют другие VM)
+    echo -e "${ORANGE}=== Анализ использования CPU ядрами ===${NC}"
+    mpstat -P ALL 1 1 | tail -n +4 | awk '{printf "Ядро %s | Пользователь: %s%% | Система: %s%% | Украдено: %s%%\n", $2, $3, $5, $13}'
 
-    # Проверка общего трафика за 30 дней (с единицами измерения)
+    # 6️⃣ Проверка сетевого трафика за 30 дней (исправлено)
     if command -v vnstat &>/dev/null; then
         echo -e "${ORANGE}=== Общий трафик за 30 дней ===${NC}"
         TRAFFIC_JSON=$(vnstat --json m 2>/dev/null)
@@ -185,7 +185,6 @@ check_resource_usage() {
         else
             RX_BYTES=$(echo "$TRAFFIC_JSON" | jq -r '.interfaces[0].traffic.month[0].rx')
             TX_BYTES=$(echo "$TRAFFIC_JSON" | jq -r '.interfaces[0].traffic.month[0].tx')
-            TOTAL_BYTES=$(echo "$TRAFFIC_JSON" | jq -r '.interfaces[0].traffic.month[0].total')
 
             format_bytes() {
                 local bytes=$1
@@ -200,14 +199,14 @@ check_resource_usage() {
 
             echo -e "Получено: ${ORANGE}$(format_bytes $RX_BYTES)${NC}"
             echo -e "Отправлено: ${ORANGE}$(format_bytes $TX_BYTES)${NC}"
-            echo -e "Всего: ${ORANGE}$(format_bytes $TOTAL_BYTES)${NC}"
         fi
     else
         echo -e "${RED}vnstat не установлен!${NC}"
     fi
 
-    # Проверка текущей скорости трафика (замер за 10 секунд)
+    # 7️⃣ Проверка текущей скорости трафика (исправлено)
     echo -e "${ORANGE}=== Текущая скорость трафика (замер за 10 сек) ===${NC}"
+    NET_IF=$(ip -o -4 route show to default | awk '{print $5}')
     RX1=$(cat /sys/class/net/$NET_IF/statistics/rx_bytes)
     TX1=$(cat /sys/class/net/$NET_IF/statistics/tx_bytes)
     sleep 10
@@ -216,9 +215,6 @@ check_resource_usage() {
 
     RX_SPEED=$(awk "BEGIN {printf \"%.2f\", ($RX2 - $RX1) / 1024 / 1024 / 10}")
     TX_SPEED=$(awk "BEGIN {printf \"%.2f\", ($TX2 - $TX1) / 1024 / 1024 / 10}")
-
-    [[ $(echo "$RX_SPEED < 0.1" | bc) -eq 1 ]] && RX_SPEED="< 0.1"
-    [[ $(echo "$TX_SPEED < 0.1" | bc) -eq 1 ]] && TX_SPEED="< 0.1"
 
     echo -e "Скорость загрузки: ${ORANGE}${RX_SPEED} MB/s${NC}"
     echo -e "Скорость выгрузки: ${ORANGE}${TX_SPEED} MB/s${NC}"
