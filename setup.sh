@@ -1,6 +1,5 @@
 #!/bin/bash
 
-# Конфигурация
 LOGO_URL="https://raw.githubusercontent.com/ProNodeRunner/Logo/main/Logo"
 ORANGE='\033[0;33m'
 GREEN='\033[0;32m'
@@ -9,6 +8,7 @@ NC='\033[0m'
 NODE_DIR="light-node"
 MERKLE_DIR="risc0-merkle-service"
 SERVICE_USER=$(whoami)
+INSTALL_DIR=$(pwd)
 
 show_logo() {
     echo -e "${ORANGE}"
@@ -17,59 +17,42 @@ show_logo() {
 }
 
 check_dependencies() {
-    # Проверка и установка недостающих пакетов
-    local missing=()
-    for pkg in git curl build-essential; do
-        ! dpkg -l | grep -q $pkg && missing+=($pkg)
-    done
-    
-    [ ${#missing[@]} -gt 0 ] && {
-        echo -e "${ORANGE}Установка системных пакетов: ${missing[@]}${NC}"
-        sudo DEBIAN_FRONTEND=noninteractive apt-get install -yq "${missing[@]}"
-    }
-
-    # Обновление ядра
-    current_kernel=$(uname -r)
-    latest_kernel=$(apt list --installed | grep linux-image-generic | awk -F' ' '{print $2}')
-    [ "$current_kernel" != "$latest_kernel" ] && {
-        echo -e "${ORANGE}Обновление ядра до $latest_kernel${NC}"
-        sudo DEBIAN_FRONTEND=noninteractive apt-get install -yq linux-image-generic
-        sudo apt-get -yq autoremove
-    }
+    echo -e "${ORANGE}[1/7] Проверка зависимостей...${NC}"
+    sudo DEBIAN_FRONTEND=noninteractive apt-get update -yq
+    sudo DEBIAN_FRONTEND=noninteractive apt-get install -yq git curl build-essential
 }
 
 install_go() {
-    ! command -v go &>/dev/null && {
-        echo -e "${ORANGE}Установка Go 1.18...${NC}"
+    if ! command -v go &>/dev/null; then
+        echo -e "${ORANGE}[2/7] Установка Go 1.18...${NC}"
         sudo add-apt-repository -y ppa:longsleep/golang-backports
         sudo DEBIAN_FRONTEND=noninteractive apt-get install -yq golang-1.18
         echo 'export PATH=$PATH:/usr/lib/go-1.18/bin' >> ~/.bashrc
         source ~/.bashrc
-    }
+    fi
 }
 
 install_rust() {
-    ! command -v cargo &>/dev/null && {
-        echo -e "${ORANGE}Установка Rust...${NC}"
+    if ! command -v cargo &>/dev/null; then
+        echo -e "${ORANGE}[3/7] Установка Rust...${NC}"
         curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y
         source "$HOME/.cargo/env"
         rustup default 1.81.0 -y
-    }
+    fi
 }
 
 install_risc0() {
-    ! command -v rzup &>/dev/null && {
-        echo -e "${ORANGE}Установка Risc0...${NC}"
+    if ! command -v rzup &>/dev/null; then
+        echo -e "${ORANGE}[4/7] Установка Risc0...${NC}"
         curl -L https://risczero.com/install | bash
         source "$HOME/.cargo/env"
-        rzup install
-    }
+        rzup install --force
+    fi
 }
 
 setup_systemd() {
-    echo -e "${ORANGE}Настройка systemd сервисов...${NC}"
+    echo -e "${ORANGE}[5/7] Настройка systemd...${NC}"
     
-    # Merkle Service
     sudo tee /etc/systemd/system/merkle.service >/dev/null <<EOL
 [Unit]
 Description=LayerEdge Merkle Service
@@ -77,7 +60,7 @@ After=network.target
 
 [Service]
 User=$SERVICE_USER
-WorkingDirectory=$(pwd)/$MERKLE_DIR
+WorkingDirectory=$INSTALL_DIR/$NODE_DIR/$MERKLE_DIR
 ExecStart=$(which cargo) run --release
 Restart=always
 RestartSec=10s
@@ -86,7 +69,6 @@ RestartSec=10s
 WantedBy=multi-user.target
 EOL
 
-    # Node Service
     sudo tee /etc/systemd/system/layeredge-node.service >/dev/null <<EOL
 [Unit]
 Description=LayerEdge Light Node
@@ -94,8 +76,8 @@ After=merkle.service
 
 [Service]
 User=$SERVICE_USER
-WorkingDirectory=$(pwd)
-ExecStart=$(pwd)/layeredge-node
+WorkingDirectory=$INSTALL_DIR/$NODE_DIR
+ExecStart=$INSTALL_DIR/$NODE_DIR/layeredge-node
 Restart=always
 RestartSec=10s
 
@@ -107,8 +89,24 @@ EOL
     sudo systemctl enable merkle.service layeredge-node.service
 }
 
+build_project() {
+    echo -e "${ORANGE}[6/7] Сборка проекта...${NC}"
+    
+    cd $INSTALL_DIR/$NODE_DIR/$MERKLE_DIR
+    cargo build --release || {
+        echo -e "${RED}Ошибка сборки Merkle-сервиса!${NC}"
+        exit 1
+    }
+    
+    cd $INSTALL_DIR/$NODE_DIR
+    go build -o layeredge-node || {
+        echo -e "${RED}Ошибка сборки Light Node!${NC}"
+        exit 1
+    }
+}
+
 start_services() {
-    echo -e "${ORANGE}Запуск сервисов...${NC}"
+    echo -e "${ORANGE}[7/7] Запуск сервисов...${NC}"
     sudo systemctl restart merkle.service layeredge-node.service
 }
 
@@ -119,18 +117,43 @@ node_status() {
 
 show_logs() {
     echo -e "\n${ORANGE}=== ЛОГИ MERCKLE ===${NC}"
-    journalctl -u merkle.service -n 10 --no-pager
+    journalctl -u merkle.service -n 10 --no-pager --no-hostname
     
     echo -e "\n${ORANGE}=== ЛОГИ НОДЫ ===${NC}"
-    journalctl -u layeredge-node.service -n 10 --no-pager
+    journalctl -u layeredge-node.service -n 10 --no-pager --no-hostname
 }
 
 delete_node() {
     echo -e "${RED}Удаление ноды...${NC}"
     sudo systemctl stop merkle.service layeredge-node.service
     sudo systemctl disable merkle.service layeredge-node.service
-    sudo rm -f /etc/systemd/system/merkle.service /etc/systemd/system/layeredge-node.service
-    rm -rf $NODE_DIR
+    sudo rm -f /etc/systemd/system/{merkle,layeredge-node}.service
+    sudo rm -rf $INSTALL_DIR/$NODE_DIR
+    echo -e "${GREEN}Нода удалена!${NC}"
+}
+
+install_node() {
+    check_dependencies
+    install_go
+    install_rust
+    install_risc0
+
+    echo -e "${ORANGE}Клонирование репозитория...${NC}"
+    [ ! -d "$NODE_DIR" ] && git clone https://github.com/Layer-Edge/light-node.git || cd $NODE_DIR
+    
+    read -p "Введите приватный ключ: " PRIVATE_KEY
+    cat > $NODE_DIR/.env <<EOL
+GRPC_URL=34.31.74.109:9090
+CONTRACT_ADDR=cosmos1ufs3tlq4umljk0qfe8k5ya0x6hpavn897u2cnf9k0en9jr7qarqqt56709
+ZK_PROVER_URL=http://127.0.0.1:3001
+API_REQUEST_TIMEOUT=100
+POINTS_API=http://127.0.0.1:8080
+PRIVATE_KEY='$PRIVATE_KEY'
+EOL
+
+    build_project
+    setup_systemd
+    start_services
 }
 
 show_menu() {
@@ -142,34 +165,6 @@ show_menu() {
     echo -e "4. Перезапустить сервисы"
     echo -e "5. Удалить ноду"
     echo -e "6. Выход${NC}"
-}
-
-install_node() {
-    check_dependencies
-    install_go
-    install_rust
-    install_risc0
-    
-    echo -e "${ORANGE}Клонирование репозитория...${NC}"
-    [ ! -d "$NODE_DIR" ] && git clone https://github.com/Layer-Edge/light-node.git
-    cd $NODE_DIR || exit 1
-
-    read -p "Введите приватный ключ кошелька: " PRIVATE_KEY
-    cat > .env <<EOL
-GRPC_URL=34.31.74.109:9090
-CONTRACT_ADDR=cosmos1ufs3tlq4umljk0qfe8k5ya0x6hpavn897u2cnf9k0en9jr7qarqqt56709
-ZK_PROVER_URL=http://127.0.0.1:3001
-API_REQUEST_TIMEOUT=100
-POINTS_API=http://127.0.0.1:8080
-PRIVATE_KEY='$PRIVATE_KEY'
-EOL
-
-    echo -e "${GREEN}Сборка проекта...${NC}"
-    cd $MERKLE_DIR && cargo build --release
-    cd ../ && go build -o layeredge-node
-    
-    setup_systemd
-    start_services
 }
 
 while true; do
