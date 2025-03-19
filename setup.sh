@@ -33,12 +33,29 @@ install_go() {
 }
 
 install_rust() {
-    if ! command -v cargo &>/dev/null; then
-        echo -e "${ORANGE}[3/7] Установка Rust...${NC}"
-        curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y
-        source "$HOME/.cargo/env"
-        rustup default 1.81.0 -y
+    echo -e "${ORANGE}[4/8] Установка Rust...${NC}"
+    
+    # Удаление существующей версии Rust
+    if [ -x "$(command -v rustc)" ]; then
+        echo -e "${ORANGE}Обнаружена существующая установка Rust, выполняется обновление...${NC}"
+        sudo apt-get remove -yq rustc cargo
+        rm -rf ~/.cargo
     fi
+
+    # Установка с игнорированием системных версий
+    export RUSTUP_INIT_SKIP_PATH_CHECK=yes
+    curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --default-toolchain 1.81.0
+    
+    # Обновление PATH
+    source "$HOME/.cargo/env"
+    export PATH="$HOME/.cargo/bin:$PATH"
+    
+    # Принудительная установка версии
+    rustup default 1.81.0
+    rustup update
+    
+    # Проверка установки
+    cargo --version || { echo -e "${RED}Ошибка установки Rust!${NC}"; exit 1; }
 }
 
 install_risc0() {
