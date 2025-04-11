@@ -12,12 +12,14 @@ show_menu() {
     echo -e "${ORANGE}"
     curl -sSf "$LOGO_URL" 2>/dev/null || echo -e "=== Server Management ==="
     echo -e "\n\n\n"
-    echo " ༺ Управление сервером по кайфу v4.3 ༻ "
+    echo " ༺ Управление сервером по кайфу v4.4 ༻ "
     echo "======================================="
     echo "1) Установить новый сервер"
     echo "2) Проверить загрузку ресурсов"
     echo "3) Проверить ноды на сервере"
     echo "4) Перезагрузить сервер"
+    echo "6) Засейвить сервер"
+    echo "7) Восстановить сервер после падения"
     echo "9) Удалить сервер"
     echo "5) Выход"
     echo -e "${NC}"
@@ -250,6 +252,126 @@ reboot_server() {
     sudo reboot  
 }  
 
+# Решение: Обновлённая функция save_screen_nodes()
+# Эта функция сохраняет информацию о активных screen-сессиях нод в файл /etc/nodes.conf,
+# добавляя новые записи, если их там ещё нет, и оставляя существующие без изменений.
+#
+# Ожидаемый формат записи в /etc/nodes.conf:
+#   # Нода: <имя проекта>
+#   screen -dmS <имя проекта> bash -c "<команда запуска>"
+#
+# Если запись для конкретного проекта уже существует, она не перезаписывается.
+# Таким образом, при последовательном запуске функция добавляет только новые ноды,
+# сохраняя историю уже сохранённых записей для последующего восстановления.
+
+save_screen_nodes() {
+    echo -e "${ORANGE}[*] Сохранение активных screen-сессий нод в /etc/nodes.conf...${NC}"
+    
+    config_file="/etc/nodes.conf"
+    tmpfile=$(mktemp)
+    
+    # Если /etc/nodes.conf уже существует, копируем его содержимое
+    if [ -f "$config_file" ]; then
+        cp "$config_file" "$tmpfile"
+    else
+        # Иначе создаем новый файл с заголовком
+        {
+            echo "# Конфигурация запуска нод, сохранённых в screen-сессиях"
+            echo "# Данный файл используется для восстановления нод после ребута сервера."
+            echo "# Формат: screen -dmS <имя проекта> bash -c \"<команда запуска>\""
+            echo ""
+        } > "$tmpfile"
+    fi
+
+    # Перебираем активные screen-сессии. Ожидается формат: "PID.ИМЯ" (например, "12345.Gensyn")
+    screen -ls | grep -oE '[0-9]+\.[^[:space:]]+' | while read -r session; do
+        session_pid=$(echo "$session" | cut -d'.' -f1)
+        session_name=$(echo "$session" | cut -d'.' -f2)
+        # Извлекаем первую дочернюю команду для данного screen-процесса
+        child_cmd=$(ps --ppid "$session_pid" -o cmd= 2>/dev/null | head -n 1)
+        if [ -z "$child_cmd" ]; then
+            child_cmd="echo 'Запустить ноду $session_name' && sleep 1"
+        fi
+
+        # Проверяем, существует ли уже запись с этим именем сессии в файле
+        if ! grep -q "screen -dmS $session_name " "$tmpfile"; then
+            echo "# Нода: $session_name" >> "$tmpfile"
+            echo "screen -dmS $session_name bash -c \"$child_cmd\"" >> "$tmpfile"
+            echo "" >> "$tmpfile"
+        fi
+    done
+
+    # Перемещаем временный файл в /etc/nodes.conf с правами root
+    sudo mv "$tmpfile" "$config_file"
+    echo -e "${GREEN}[✓] Конфигурация нод обновлена в $config_file${NC}"
+    read -n1 -s -r -p "Нажмите любую клавишу для возврата в меню..."
+    echo
+}
+
+# Решение: Функция revive_server для автоматического восстановления сервера после падения.
+# Функция выполняет следующие действия:
+# 1. Перезагружает конфигурацию systemd (если имеются unit-файлы для нод).
+# 2. Перезапускает Docker-контейнеры нод, которые не активны.
+# 3. Восстанавливает ноды, запущенные через screen, на основании конфигурационного файла /etc/nodes.conf.
+#    Для каждой записи в файле:
+#      - Извлекается имя сессии.
+#      - Если сессия уже активна (проверяется через screen -ls), то пропускается.
+#      - Если сессия отсутствует, выполняется команда запуска из файла.
+#
+# Это позволяет, если после падения сервера некоторые ноды не восстановились, их перезапустить
+# без потери ранее добавленных записей (они аккумулируются в /etc/nodes.conf).
+
+revive_server() {
+    echo -e "${ORANGE}[!] Запуск восстановления сервера после падения...${NC}"
+
+    # 1. Перезагрузка systemd unit файлов (если имеются)
+    echo -e "\n${ORANGE}[*] Перезагрузка конфигурации systemd (если имеются unit-файлы)...${NC}"
+    sudo systemctl daemon-reload
+
+    # 2. Перезапуск Docker-контейнеров нод
+    echo -e "\n${ORANGE}[*] Перезапуск Docker-контейнеров нод...${NC}"
+    if command -v docker &>/dev/null; then
+        for container in $(docker ps -a --filter "name=node" -q); do
+            if [ "$(docker inspect -f '{{.State.Running}}' "$container")" != "true" ]; then
+                echo -e "Запуск Docker контейнера: ${GREEN}$container${NC}"
+                docker start "$container"
+            else
+                echo -e "Контейнер ${GREEN}$container${NC} уже запущен"
+            fi
+        done
+    else
+        echo "Docker не установлен"
+    fi
+
+    # 3. Восстановление нод, запущенных через screen, из файла /etc/nodes.conf
+    echo -e "\n${ORANGE}[*] Восстановление нод из файла /etc/nodes.conf...${NC}"
+    if [ -f /etc/nodes.conf ]; then
+        while IFS= read -r line || [ -n "$line" ]; do
+            # Пропускаем пустые строки и комментарии
+            [[ -z "$line" || "$line" =~ ^# ]] && continue
+
+            # Извлекаем имя сессии.
+            # Ожидаемый формат: 
+            #   screen -dmS <имя_сессии> bash -c "<команда запуска>"
+            session_name=$(echo "$line" | awk '{print $3}')
+            # Проверяем, есть ли уже активная сессия с этим именем:
+            if screen -ls | grep -qE "[0-9]+\.$session_name\b"; then
+                echo -e "Сессия ${GREEN}$session_name${NC} уже активна. Пропускаем."
+            else
+                echo -e "Запуск: ${GREEN}$line${NC}"
+                bash -c "$line"
+            fi
+        done < /etc/nodes.conf
+    else
+        echo -e "${RED}Файл /etc/nodes.conf не найден. Ноды, запущенные через screen, не восстановлены.${NC}"
+    fi
+
+    echo -e "\n${GREEN}[✓] Восстановление сервера завершено. Проверьте состояние нод.${NC}"
+    read -n1 -s -r -p "Нажмите любую клавишу для возврата в меню..."
+    echo
+}
+
+
 # Решение: Полная очистка сервера от нод и зависимостей
 remove_server() {
     echo -e "${ORANGE}[!] Начинается полное удаление сервера...${NC}"
@@ -311,6 +433,8 @@ while true; do
         2) check_resource_usage ;;
         3) check_nodes ;;
         4) reboot_server ;;
+        6) save_screen_nodes ;;
+        7) revive_server ;;
         9) remove_server ;;
         5) 
             echo -e "${GREEN}Выход...${NC}"
