@@ -140,84 +140,47 @@ EOF
 }
 
 check_resource_usage() {
-    echo -e "${ORANGE}=== Загрузка ресурсов ===${NC}"
+  # Оборачиваем вывод в less -R для прокрутки
+  {
+    echo -e "${ORANGE}=== Общая загрузка CPU (mpstat) ===${NC}"
+    CPU_TOTAL=$(mpstat 1 1 | awk '/Average:/ && $2 == "all" {printf "%.2f%%", 100 - $NF}')
+    echo "Суммарная загрузка CPU: $CPU_TOTAL"
 
-    # 1️⃣ CPU сервера (исправленный расчет)
-    CPU_LOAD=$(top -bn1 | grep "Cpu(s)" | awk '{print $2 + $4}')
-    STEAL_TIME=$(top -bn1 | grep "Cpu(s)" | awk '{print $8}')
-    MEMORY_LOAD=$(free | awk '/Mem:/ {printf "%.1f", $3/$2 * 100}')
+    echo -e "\n${ORANGE}=== Загрузка RAM ===${NC}"
+    MEM_USAGE=$(free -m | awk '/Mem:/ {printf "%.2f%%", $3/$2*100}')
+    echo "Использование RAM: $MEM_USAGE"
 
-    echo -e "CPU сервера: ${ORANGE}${CPU_LOAD}%${NC}"
-    echo -e "RAM сервера: ${ORANGE}${MEMORY_LOAD}%${NC}"
-    echo -e "Steal Time (украденный CPU на VPS): ${RED}${STEAL_TIME}%${NC}"
+    echo -e "\n${ORANGE}=== Топ процессов по CPU ===${NC}"
+    ps -eo pid,ppid,comm,%cpu,%mem --sort=-%cpu | head -n 15
 
-    # 2️⃣ Нагрузка по CLI-нодам (улучшено)
-    echo -e "${ORANGE}=== Нагрузка по нодам (CLI-клиенты) ===${NC}"
-    ps -eo pid,comm,%cpu,%mem --sort=-%cpu | head -n 15 | awk '{printf "PID: %s | Процесс: %s | CPU: %s%% | RAM: %s%%\n", $1, $2, $3, $4}'
+    echo -e "\n${ORANGE}=== Загрузка в screen-сессиях (дочерние процессы) ===${NC}"
+    screen -ls | grep -Eo '([0-9]+)\.' | grep -Eo '[0-9]+' | while read -r SCREEN_PID; do
+      CHILD_USAGE=$(ps --no-header -eo ppid,pid,comm,%cpu,%mem | awk -v spid="$SCREEN_PID" '$1 == spid {cpu+=$4; mem+=$5} END {printf "%.2f%% CPU / %.2f%% MEM", cpu, mem}')
+      SESSION_NAME=$(screen -ls | grep "$SCREEN_PID" | awk '{print $1}')
+      [ -n "$CHILD_USAGE" ] && echo "Session: $SESSION_NAME => $CHILD_USAGE"
+    done
 
-    # 3️⃣ Нагрузка по screen-сессиям
-    if command -v screen &>/dev/null && screen -ls | grep -q "."; then
-        echo -e "${ORANGE}=== Нагрузка по screen-сессиям ===${NC}"
-        screen -ls | grep -oE '[0-9]+[.][^ ]+' | while read -r session; do
-            PID=$(screen -ls | grep "$session" | awk '{print $1}' | cut -d'.' -f1)
-            CPU=$(ps -p $PID -o %cpu --no-headers | awk '{print $1}')
-            MEM=$(ps -p $PID -o %mem --no-headers | awk '{print $1}')
-            echo -e "Сессия: ${ORANGE}$session${NC} | CPU: ${ORANGE}${CPU:-0}%${NC} | RAM: ${ORANGE}${MEM:-0}%${NC}"
-        done
-    fi
+    echo -e "\n${ORANGE}=== Docker контейнеры ===${NC}"
+    command -v docker &>/dev/null && docker stats --no-stream --format "table {{.Name}}\t{{.CPUPerc}}\t{{.MemUsage}}" || echo "Docker не найден"
 
-    # 4️⃣ Нагрузка по Docker-контейнерам (исправлено)
-    if command -v docker &>/dev/null; then
-        echo -e "${ORANGE}=== Нагрузка по Docker-нодам ===${NC}"
-        docker stats --no-stream --format "table {{.Name}}\t{{.CPUPerc}}\t{{.MemUsage}}"
-    fi
-
-    # 5️⃣ Проверка Steal Time (если CPU воруют другие VM)
-    echo -e "${ORANGE}=== Анализ использования CPU ядрами ===${NC}"
-    mpstat -P ALL 1 1 | tail -n +4 | awk '{printf "Ядро %s | Пользователь: %s%% | Система: %s%% | Украдено: %s%%\n", $2, $3, $5, $13}'
-
-    # 6️⃣ Проверка сетевого трафика за 30 дней (исправлено)
+    echo -e "\n${ORANGE}=== Трафик за 30 дней (vnstat) ===${NC}"
     if command -v vnstat &>/dev/null; then
-        echo -e "${ORANGE}=== Общий трафик за 30 дней ===${NC}"
-        TRAFFIC_JSON=$(vnstat --json m 2>/dev/null)
-        if [[ -z "$TRAFFIC_JSON" ]]; then
-            echo -e "${RED}Сбор данных... Подождите несколько часов.${NC}"
-        else
-            RX_BYTES=$(echo "$TRAFFIC_JSON" | jq -r '.interfaces[0].traffic.month[0].rx')
-            TX_BYTES=$(echo "$TRAFFIC_JSON" | jq -r '.interfaces[0].traffic.month[0].tx')
-
-            format_bytes() {
-                local bytes=$1
-                if (( bytes >= 1073741824 )); then
-                    echo "$(awk "BEGIN {printf \"%.2f GB\", $bytes/1073741824}")"
-                elif (( bytes >= 1048576 )); then
-                    echo "$(awk "BEGIN {printf \"%.2f MB\", $bytes/1048576}")"
-                else
-                    echo "${bytes} KB"
-                fi
-            }
-
-            echo -e "Получено: ${ORANGE}$(format_bytes $RX_BYTES)${NC}"
-            echo -e "Отправлено: ${ORANGE}$(format_bytes $TX_BYTES)${NC}"
-        fi
+      vnstat -m
     else
-        echo -e "${RED}vnstat не установлен!${NC}"
+      echo "vnstat не установлен"
     fi
 
-    # 7️⃣ Проверка текущей скорости трафика (исправлено)
-    echo -e "${ORANGE}=== Текущая скорость трафика (замер за 10 сек) ===${NC}"
+    echo -e "\n${ORANGE}=== Текущая скорость (10 сек) ===${NC}"
     NET_IF=$(ip -o -4 route show to default | awk '{print $5}')
-    RX1=$(cat /sys/class/net/$NET_IF/statistics/rx_bytes)
-    TX1=$(cat /sys/class/net/$NET_IF/statistics/tx_bytes)
+    RX1=$(< /sys/class/net/$NET_IF/statistics/rx_bytes)
+    TX1=$(< /sys/class/net/$NET_IF/statistics/tx_bytes)
     sleep 10
-    RX2=$(cat /sys/class/net/$NET_IF/statistics/rx_bytes)
-    TX2=$(cat /sys/class/net/$NET_IF/statistics/tx_bytes)
-
-    RX_SPEED=$(awk "BEGIN {printf \"%.2f\", ($RX2 - $RX1) / 1024 / 1024 / 10}")
-    TX_SPEED=$(awk "BEGIN {printf \"%.2f\", ($TX2 - $TX1) / 1024 / 1024 / 10}")
-
-    echo -e "Скорость загрузки: ${ORANGE}${RX_SPEED} MB/s${NC}"
-    echo -e "Скорость выгрузки: ${ORANGE}${TX_SPEED} MB/s${NC}"
+    RX2=$(< /sys/class/net/$NET_IF/statistics/rx_bytes)
+    TX2=$(< /sys/class/net/$NET_IF/statistics/tx_bytes)
+    RX_SPEED=$(awk "BEGIN {printf \"%.2f\", ($RX2 - $RX1)/1024/1024/10}")
+    TX_SPEED=$(awk "BEGIN {printf \"%.2f\", ($TX2 - $TX1)/1024/1024/10}")
+    echo "Загрузка: ${RX_SPEED} MB/s | Выгрузка: ${TX_SPEED} MB/s"
+  } | less -R
 }
 
 check_nodes() {
