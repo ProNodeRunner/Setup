@@ -208,24 +208,42 @@ check_resource_usage() {
 }
 
 
+# Решение
 check_nodes() {
     echo -e "${ORANGE}=== Анализ нод ===${NC}"
+
+    # 1. Вывод всех Docker контейнеров (независимо от статуса)
+    echo -e "\n${ORANGE}[*] Все Docker контейнеры нод:${NC}"
+    docker ps -a --format "table {{.Names}}\t{{.Status}}\t{{.Image}}" || echo "Контейнеры не найдены"
+
+    # 2. Поиск нод в systemd unit файлах.
+    # Универсальный поиск — ищем по ключевым словам: "node", "cli" и "rclient".
+    echo -e "\n${ORANGE}[*] Systemd unit files автозапуска (поиск 'node|cli|rclient'):${NC}"
+    sudo grep -RilE "(node|cli|rclient|daemon|fullnode|lightnode|validator|worker|agent|depin|edge|runner|service)" /etc/systemd/system/ 2>/dev/null | sort -u || echo "Нет записей в /etc/systemd/system/"
+
+    # 3. Поиск нод в конфигурационных файлах.
+    echo -e "\n${ORANGE}[*] Конфигурационные файлы с нодами (поиск 'node|cli|rclient'):${NC}"
+    sudo grep -RilE "(node|cli|rclient|daemon|fullnode|lightnode|validator|worker|agent|depin|edge|runner|service)" /etc/ 2>/dev/null | sort -u || echo "Нет конфигураций с нодами"
+
+    # 4. Поиск информации о нодах в screen-сессиях.
+    echo -e "\n${ORANGE}[*] Screen-сессии (поиск 'node|cli|rclient'):${NC}"
+    screen -ls 2>/dev/null | grep -Ei "(node|cli|rclient|daemon|fullnode|lightnode|validator|worker|agent|depin|edge|runner|service)" || echo "Нет активных или сохранённых screen-сессий"
+
+    # 5. Вывод дополнительного файла автозапуска нод (если используется)
+    echo -e "\n${ORANGE}[*] Файл автозапуска нод (/etc/nodes.conf):${NC}"
+    if [ -f /etc/nodes.conf ]; then
+        cat /etc/nodes.conf
+    else
+        echo "/etc/nodes.conf не найден"
+    fi
+
+    echo -e "\n${ORANGE}[!] Рекомендация:${NC}"
+    echo "Если сервер перезагружен и screen-сессии утрачены, используйте найденные systemd unit файлы или конфигурации для восстановления нод."
+    echo "Рекомендуется вести бэкап списка нод (например, в /etc/nodes.conf) для быстрого восстановления."
     
-    echo -e "\n${ORANGE}[*] Docker-контейнеры нод:${NC}"
-    docker ps -a --filter "name=node" --format "table {{.Names}}\t{{.Status}}\t{{.Image}}" || echo "Ноды не найдены"
-    
-    echo -e "\n${ORANGE}[*] Проверка аппаратных параметров:${NC}"
-    for volume in $(docker volume ls -q --filter "name=node"); do
-        echo -e "${GREEN}Обнаружен volume: $volume${NC}"
-        docker run --rm -v "$volume:/data" alpine sh -c '
-            echo "CPU cores: $(cat /data/cpu_cores)"
-            echo "RAM GB: $(cat /data/ram_gb)"
-            echo "SSD GB: $(cat /data/ssd_gb)"
-        ' 2>/dev/null || echo "Данные спуфинга не найдены"
-    done
-    
-    echo -e "\n${GREEN}[✓] Проверка завершена${NC}"
+    echo -e "\n${GREEN}[✓] Анализ завершен. Используйте найденные данные для восстановления нод.${NC}"
 }
+
 
 reboot_server() {  
     echo -e "${ORANGE}[!] Инициирую перезагрузку...${NC}"  
