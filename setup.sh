@@ -20,7 +20,7 @@ show_menu() {
     echo "4) Перезагрузить сервер"
     echo "6) Засейвить сервер"
     echo "7) Восстановить сервер после падения"
-    echo "9) Удалить сервер"
+    echo "0) Удалить сервер"
     echo "5) Выход"
     echo -e "${NC}"
 }
@@ -436,7 +436,7 @@ while true; do
         6) save_screen_nodes ;;
         7) revive_server ;;
         9) remove_server ;;
-        5) 
+        0) 
             echo -e "${GREEN}Выход...${NC}"
             break ;;
         *) echo -e "${RED}Неверный выбор!${NC}" ;;
