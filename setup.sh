@@ -12,7 +12,7 @@ show_menu() {
     echo -e "${ORANGE}"
     curl -sSf "$LOGO_URL" 2>/dev/null || echo -e "=== Server Management ==="
     echo -e "\n\n\n"
-    echo " ༺ Управление сервером по кайфу v4.1 ༻ "
+    echo " ༺ Управление сервером по кайфу v4.2 ༻ "
     echo "======================================="
     echo "1) Установить новый сервер"
     echo "2) Проверить загрузку ресурсов"
@@ -232,16 +232,57 @@ reboot_server() {
     sudo reboot  
 }  
 
-remove_server() {  
-    echo -e "${ORANGE}[!] Удаление сервера...${NC}"  
+# Решение: Полная очистка сервера от нод и зависимостей
+remove_server() {
+    echo -e "${ORANGE}[!] Начинается полное удаление сервера...${NC}"
+    
+    # 1. Отключение пользовательских сервисов
     sudo systemctl disable --now prometheus 2>/dev/null
+    sudo systemctl disable --now titan-node.service 2>/dev/null
+
+    # 2. Удаление конфигураций и файлов служб
     sudo rm -rf /etc/prometheus /var/lib/prometheus /usr/local/bin/prometheus* 2>/dev/null
-    
-    sudo apt remove -y nano file fail2ban 2>/dev/null
-    sudo apt autoremove -y
-    
-    echo -e "\n${RED}[!] Сервер удален!${NC}\n"  
-}  
+    sudo rm -rf /etc/titan_nodes.conf /etc/systemd/system/titan-node.service 2>/dev/null
+
+    # 3. Удаление Docker: контейнеров, volumes, образов и очистка системы
+    if command -v docker &>/dev/null; then
+        echo -e "${ORANGE}[1/7] Удаление docker контейнеров нод...${NC}"
+        docker ps -aq --filter "name=node" | xargs -r docker rm -f
+
+        echo -e "${ORANGE}[2/7] Удаление docker volumes нод...${NC}"
+        docker volume ls -q --filter "name=node" | xargs -r docker volume rm
+
+        echo -e "${ORANGE}[3/7] Удаление docker образов нод...${NC}"
+        docker images -q "node*" | xargs -r docker rmi -f
+
+        echo -e "${ORANGE}[4/7] Очистка docker системы...${NC}"
+        docker system prune -af
+    fi
+
+    # 4. Остановка и удаление всех screen-сессий, связанных с нодами
+    if command -v screen &>/dev/null; then
+        echo -e "${ORANGE}[5/7] Остановка screen-сессий нод...${NC}"
+        screen -ls | grep "node" | awk -F. '{print $1}' | xargs -r -I{} screen -X -S {} quit
+    fi
+
+    # 5. Удаление установленных пакетов, связанных с нодами и системными утилитами
+    # Список пакетов можно расширять по необходимости.
+    PACKAGES_TO_PURGE="docker-ce docker-ce-cli containerd.io screen wget tar nano file fail2ban vnstat ifstat net-tools jq"
+    sudo apt-get purge -y $PACKAGES_TO_PURGE 2>/dev/null
+    sudo apt-get autoremove -y --purge 2>/dev/null
+
+    # 6. Очистка кастомных конфигурационных файлов и директорий
+    sudo rm -rf /etc/docker /var/lib/docker /opt/node 2>/dev/null
+
+    # 7. Очистка iptables и сохранение настроек
+    sudo iptables -t nat -F
+    sudo iptables -t mangle -F
+    sudo netfilter-persistent save >/dev/null 2>&1
+
+    echo -e "\n${RED}[!] Сервер полностью очищен и готов к возврату хостингу!${NC}\n"
+}
+# Полная очистка сервера от нод и зависимостей.
+
 
 while true; do  
     show_menu
