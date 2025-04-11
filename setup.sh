@@ -18,8 +18,8 @@ show_menu() {
     echo "2) Проверить загрузку ресурсов"
     echo "3) Проверить ноды на сервере"
     echo "4) Перезагрузить сервер"
-    echo "5) Удалить сервер"
-    echo "6) Выход"
+    echo "9) Удалить сервер"
+    echo "5) Выход"
     echo -e "${NC}"
 }
 
@@ -293,8 +293,8 @@ while true; do
         2) check_resource_usage ;;
         3) check_nodes ;;
         4) reboot_server ;;
-        5) remove_server ;;
-        6) 
+        9) remove_server ;;
+        5) 
             echo -e "${GREEN}Выход...${NC}"
             break ;;
         *) echo -e "${RED}Неверный выбор!${NC}" ;;
