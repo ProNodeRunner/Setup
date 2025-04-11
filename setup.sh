@@ -12,7 +12,7 @@ show_menu() {
     echo -e "${ORANGE}"
     curl -sSf "$LOGO_URL" 2>/dev/null || echo -e "=== Server Management ==="
     echo -e "\n\n\n"
-    echo " ༺ Управление сервером по кайфу v4.0 ༻ "
+    echo " ༺ Управление сервером по кайфу v4.1 ༻ "
     echo "======================================="
     echo "1) Установить новый сервер"
     echo "2) Проверить загрузку ресурсов"
@@ -139,29 +139,49 @@ EOF
     fi
 }
 
+# Решение
 check_resource_usage() {
-  # Оборачиваем вывод в less -R для прокрутки
-  {
-    echo -e "${ORANGE}=== Общая загрузка CPU (mpstat) ===${NC}"
-    CPU_TOTAL=$(mpstat 1 1 | awk '/Average:/ && $2 == "all" {printf "%.2f%%", 100 - $NF}')
-    echo "Суммарная загрузка CPU: $CPU_TOTAL"
-
-    echo -e "\n${ORANGE}=== Загрузка RAM ===${NC}"
-    MEM_USAGE=$(free -m | awk '/Mem:/ {printf "%.2f%%", $3/$2*100}')
-    echo "Использование RAM: $MEM_USAGE"
-
-    echo -e "\n${ORANGE}=== Топ процессов по CPU ===${NC}"
-    ps -eo pid,ppid,comm,%cpu,%mem --sort=-%cpu | head -n 15
-
-    echo -e "\n${ORANGE}=== Загрузка в screen-сессиях (дочерние процессы) ===${NC}"
-    screen -ls | grep -Eo '([0-9]+)\.' | grep -Eo '[0-9]+' | while read -r SCREEN_PID; do
-      CHILD_USAGE=$(ps --no-header -eo ppid,pid,comm,%cpu,%mem | awk -v spid="$SCREEN_PID" '$1 == spid {cpu+=$4; mem+=$5} END {printf "%.2f%% CPU / %.2f%% MEM", cpu, mem}')
-      SESSION_NAME=$(screen -ls | grep "$SCREEN_PID" | awk '{print $1}')
-      [ -n "$CHILD_USAGE" ] && echo "Session: $SESSION_NAME => $CHILD_USAGE"
+  # Функция для рекурсивного поиска всех потомков (для суммирования нагрузки)
+  get_descendants() {
+    for child in $(ps -eo pid,ppid --no-headers | awk -v p="$1" '$2 == p {print $1}'); do
+      echo "$child"
+      get_descendants "$child"
     done
+  }
+
+  {
+    echo -e "${ORANGE}=== Общая загрузка (CPU | RAM) ===${NC}"
+    CPU_PERCENT=$(mpstat 1 1 | awk '/Average: *all/ {printf "%.2f", 100 - $NF}')
+    MEM_PERCENT=$(free -m | awk '/Mem:/ {printf "%.2f", $3/$2*100}')
+    echo "CPU: ${CPU_PERCENT}% | RAM: ${MEM_PERCENT}%"
+
+    echo -e "\n${ORANGE}=== Топ-10 процессов по CPU ===${NC}"
+    ps -eo pid,ppid,comm,%cpu,%mem --sort=-%cpu | head -n 11
+
+    echo -e "\n${ORANGE}=== Нагрузка в screen-сессиях ===${NC}"
+    if command -v screen &>/dev/null && screen -ls | grep -q "\."; then
+      screen -ls | grep -Eo '([0-9]+)\.[^ ]+' | while read -r sess; do
+        sess_pid=$(cut -d'.' -f1 <<< "$sess")
+        sess_name=$(cut -d'.' -f2- <<< "$sess")
+        all_children=$(get_descendants "$sess_pid")
+        if [ -n "$all_children" ]; then
+          usage=$(ps -o %cpu= -o %mem= -p $(echo "$all_children") --no-headers 2>/dev/null \
+            | awk '{cpu+=$1; mem+=$2} END {printf "%.2f%% CPU / %.2f%% MEM", cpu, mem}')
+          echo "Session: $sess_name => $usage"
+        else
+          echo "Session: $sess_name => 0.00% CPU / 0.00% MEM"
+        fi
+      done
+    else
+      echo "Нет активных screen-сессий"
+    fi
 
     echo -e "\n${ORANGE}=== Docker контейнеры ===${NC}"
-    command -v docker &>/dev/null && docker stats --no-stream --format "table {{.Name}}\t{{.CPUPerc}}\t{{.MemUsage}}" || echo "Docker не найден"
+    if command -v docker &>/dev/null; then
+      docker stats --no-stream --format "table {{.Name}}\t{{.CPUPerc}}\t{{.MemUsage}}"
+    else
+      echo "Docker не установлен"
+    fi
 
     echo -e "\n${ORANGE}=== Трафик за 30 дней (vnstat) ===${NC}"
     if command -v vnstat &>/dev/null; then
@@ -180,8 +200,13 @@ check_resource_usage() {
     RX_SPEED=$(awk "BEGIN {printf \"%.2f\", ($RX2 - $RX1)/1024/1024/10}")
     TX_SPEED=$(awk "BEGIN {printf \"%.2f\", ($TX2 - $TX1)/1024/1024/10}")
     echo "Загрузка: ${RX_SPEED} MB/s | Выгрузка: ${TX_SPEED} MB/s"
-  } | less -R
+  }
+  # Завершающий prompt вместо (END)
+  echo
+  read -n1 -s -r -p "Нажмите любую клавишу, чтобы выйти..."
+  echo
 }
+
 
 check_nodes() {
     echo -e "${ORANGE}=== Анализ нод ===${NC}"
