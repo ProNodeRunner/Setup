@@ -12,7 +12,7 @@ show_menu() {
     echo -e "${ORANGE}"
     curl -sSf "$LOGO_URL" 2>/dev/null || echo -e "=== Server Management ==="
     echo -e "\n\n\n"
-    echo " ༺ Управление сервером по кайфу v3.0 ༻ "
+    echo " ༺ Управление сервером по кайфу v4.0 ༻ "
     echo "======================================="
     echo "1) Установить новый сервер"
     echo "2) Проверить загрузку ресурсов"
