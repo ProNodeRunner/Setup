@@ -12,16 +12,18 @@ show_menu() {
     echo -e "${ORANGE}"
     curl -sSf "$LOGO_URL" 2>/dev/null || echo -e "=== Server Management ==="
     echo -e "\n\n\n"
-    echo " ༺ Управление сервером по кайфу v4.4 ༻ "
+    echo " ༺ Управление сервером по кайфу v5.0 ༻ "
     echo "======================================="
+    echo " Что хозяин изволит? ༻ "
     echo "1) Установить новый сервер"
-    echo "2) Проверить загрузку ресурсов"
-    echo "3) Проверить ноды на сервере"
-    echo "4) Перезагрузить сервер"
-    echo "6) Засейвить сервер"
-    echo "7) Восстановить сервер после падения"
+    echo "2) Замаскировать сервер"
+    echo "3) Проверить загрузку ресурсов"
+    echo "4) Проверить ноды на сервере"
+    echo "5) Засейвить сервер"
+    echo "6) Восстановить сервер после падения"
+    echo "9) Перезагрузить сервер"
     echo "0) Удалить сервер"
-    echo "5) Выход"
+    echo "7) Иди работай, чудо-машина"
     echo -e "${NC}"
 }
 
@@ -64,11 +66,6 @@ install_server() {
             echo -e "${ORANGE}[!] Служба $service не найдена, пропускаем${NC}"
         fi
     done  
-
-    echo -e "${ORANGE}[*] Настраиваем machine-id...${NC}"  
-    if ! (sudo rm /etc/machine-id && sudo systemd-machine-id-setup); then
-        errors+=("Ошибка настройки machine-id")
-    fi
 
     echo -e "${ORANGE}[*] Устанавливаем компоненты...${NC}"  
     if ! sudo DEBIAN_FRONTEND=noninteractive apt install -y wget tar nano file fail2ban screen vnstat ifstat net-tools jq; then
@@ -139,6 +136,133 @@ EOF
         printf '• %s\n' "${errors[@]}"
         echo
     fi
+}
+
+server_hide() {
+    echo "=== Маскировка сервера: перегенерация machine-id и смена hostname ==="
+
+    #########################################
+    # 1. Перегенерация machine-id
+    #########################################
+    echo "Перегенерация machine-id..."
+    sudo rm -f /etc/machine-id
+    sudo systemd-machine-id-setup
+    echo "Новый machine-id: $(cat /etc/machine-id)"
+    echo
+
+    #########################################
+    # 2. Генерация нового hostname
+    #########################################
+    echo "Генерация нового hostname..."
+
+    # Путь к файлу словаря
+    DICT="/usr/share/dict/words"
+
+    # Если словарь не найден, устанавливаем пакет wamerican без подтверждений
+    if [ ! -f "$DICT" ]; then
+        echo "Файл $DICT не найден, устанавливаем пакет wamerican..."
+        sudo DEBIAN_FRONTEND=noninteractive apt-get update -y
+        sudo DEBIAN_FRONTEND=noninteractive apt-get install -y wamerican
+    fi
+
+    # Читаем слова из файла или используем резервный список
+    if [ -f "$DICT" ]; then
+        # Берём только строки, состоящие из строчных латинских букв
+        words=( $(grep '^[a-z]\+$' "$DICT") )
+    else
+        echo "Словарь не найден, используем резервный список слов."
+        words=(apple banana cherry dog elephant fish grape honey lemon mango)
+    fi
+
+    # Если массив слов пуст, переключаемся на резервный список
+    if [ ${#words[@]} -eq 0 ]; then
+        echo "Словарь пуст, используем резервный список."
+        words=(apple banana cherry dog elephant fish grape honey lemon mango)
+    fi
+
+    # Выбираем два случайных, неповторяющихся слова
+    index1=$(( RANDOM % ${#words[@]} ))
+    index2=$(( RANDOM % ${#words[@]} ))
+    while [ "$index1" -eq "$index2" ]; do
+        index2=$(( RANDOM % ${#words[@]} ))
+    done
+    word1=${words[$index1]}
+    word2=${words[$index2]}
+
+    # Генерируем случайные числа для вставок
+    rand1=$(shuf -i 100-999 -n 1)
+    rand2=$(shuf -i 10-99 -n 1)
+
+    # Массивы для разделителей, префиксов и токенов окружения
+    delim_options=("-" "_" "." "")
+    prefixes=("srv" "node" "host")
+    env_options=("prod" "dev" "stg" "test" "qa")
+    # Выбираем случайный разделитель
+    delim=${delim_options[$(( RANDOM % ${#delim_options[@]} ))]}
+
+    # Случайным образом выбираем один из вариантов генерации hostname (от 0 до 10)
+    pattern=$(( RANDOM % 11 ))
+    case $pattern in
+        0)
+            # Вариант: число + разделитель + слово1 + разделитель + слово2
+            new_hostname="${rand1}${delim}${word1}${delim}${word2}"
+            ;;
+        1)
+            # Вариант: слово1 + разделитель + число + разделитель + слово2
+            new_hostname="${word1}${delim}${rand1}${delim}${word2}"
+            ;;
+        2)
+            # Вариант: слово1 + разделитель + слово2 + разделитель + число
+            new_hostname="${word1}${delim}${word2}${delim}${rand1}"
+            ;;
+        3)
+            # Вариант: число + разделитель + слово1 + разделитель + другое число + разделитель + слово2
+            new_hostname="${rand1}${delim}${word1}${delim}${rand2}${delim}${word2}"
+            ;;
+        4)
+            # Вариант: слово1 + число + слово2 (без разделителей)
+            new_hostname="${word1}${rand1}${word2}"
+            ;;
+        5)
+            # Вариант: слово1 + разделитель + слово2 с числом в конце
+            new_hostname="${word1}${delim}${word2}${rand1}"
+            ;;
+        6)
+            # Вариант: число + разделитель + слово1 + разделитель + слово2 + разделитель + число
+            new_hostname="${rand1}${delim}${word1}${delim}${word2}${delim}${rand2}"
+            ;;
+        7)
+            # Вариант: префикс + разделитель + слово1 + разделитель + слово2
+            prefix=${prefixes[$(( RANDOM % ${#prefixes[@]} ))]}
+            new_hostname="${prefix}${delim}${word1}${delim}${word2}"
+            ;;
+        8)
+            # Вариант: слово1 + разделитель + токен окружения + разделитель + слово2
+            env=${env_options[$(( RANDOM % ${#env_options[@]} ))]}
+            new_hostname="${word1}${delim}${env}${delim}${word2}"
+            ;;
+        9)
+            # CamelCase: слово1 и слово2 с заглавными первыми буквами + число в конце
+            word1_cap="$(tr '[:lower:]' '[:upper:]' <<< ${word1:0:1})${word1:1}"
+            word2_cap="$(tr '[:lower:]' '[:upper:]' <<< ${word2:0:1})${word2:1}"
+            new_hostname="${word1_cap}${word2_cap}${rand1}"
+            ;;
+        10)
+            # Вариант: префикс + слово1 + токен окружения + слово2 + число (без разделителей)
+            prefix=${prefixes[$(( RANDOM % ${#prefixes[@]} ))]}
+            env=${env_options[$(( RANDOM % ${#env_options[@]} ))]}
+            new_hostname="${prefix}${word1}${env}${word2}${rand2}"
+            ;;
+    esac
+
+    echo "Устанавливаем новый hostname: ${new_hostname}"
+    sudo hostnamectl set-hostname "${new_hostname}"
+    echo "Hostname успешно обновлён: $(hostname)"
+    echo
+
+    echo "Обратите внимание: PTR-запись не изменена этим скриптом!"
+    echo "Для обновления PTR-записи воспользуйтесь панелью управления VPS или API провайдера."
+    echo "=== Маскировка сервера завершена! ==="
 }
 
 # Решение
@@ -430,14 +554,15 @@ while true; do
     
     case $option in  
         1) install_server ;;
-        2) check_resource_usage ;;
-        3) check_nodes ;;
-        4) reboot_server ;;
-        6) save_screen_nodes ;;
-        7) revive_server ;;
-        9) remove_server ;;
-        0) 
-            echo -e "${GREEN}Выход...${NC}"
+        2) server_hide ;;
+        3) check_resource_usage ;;
+        4) check_nodes ;;
+        5) save_screen_nodes ;;
+        6) revive_server ;;
+        9) reboot_server ;;
+        0) remove_server ;;
+        7) 
+            echo -e "${GREEN}И тебе хорошего дня!${NC}"
             break ;;
         *) echo -e "${RED}Неверный выбор!${NC}" ;;
     esac
