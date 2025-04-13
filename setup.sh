@@ -525,7 +525,7 @@ remove_server() {
 
 while true; do  
     show_menu
-    read -p " Пива, женщин и ?: " option
+    read -p " Пива, женщин и: " option
     
     case $option in  
         1) install_server ;;
@@ -539,7 +539,7 @@ while true; do
         7) 
             echo -e "${GREEN}Пошла зарабатывать хозяину денюжку :)${NC}"
             break ;;
-        *) echo -e "${RED}Неверный выбор!${NC}" ;;
+        *) echo -e "${RED}Я тебя не понимать дэ, попробуй ещё раз!${NC}" ;;
     esac
     
     read -p "Нажмите Enter чтобы продолжить..."
