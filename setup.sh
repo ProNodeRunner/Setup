@@ -562,7 +562,7 @@ while true; do
         9) reboot_server ;;
         0) remove_server ;;
         7) 
-            echo -e "${GREEN}И тебе хорошего дня!${NC}"
+            echo -e "${GREEN}Пошла зарабатывать хозяину денюжку :)${NC}"
             break ;;
         *) echo -e "${RED}Неверный выбор!${NC}" ;;
     esac
