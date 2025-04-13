@@ -23,7 +23,7 @@ show_menu() {
     echo "6) Восстановить сервер после падения"
     echo "9) Перезагрузить сервер"
     echo "0) Удалить сервер"
-    echo "7) Иди работай, чудо-машина"
+    echo "7) Иди работай, чудо-машина!"
     echo -e "${NC}"
 }
 
@@ -550,7 +550,7 @@ remove_server() {
 
 while true; do  
     show_menu
-    read -p "Выберите опцию [1-6]: " option
+    read -p " Пива, женщин и ?: " option
     
     case $option in  
         1) install_server ;;
