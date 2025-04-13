@@ -12,7 +12,7 @@ show_menu() {
     echo -e "${ORANGE}"
     curl -sSf "$LOGO_URL" 2>/dev/null || echo -e "=== Server Management ==="
     echo -e "\n\n\n"
-    echo " ༺ Управление сервером по кайфу v5.0 ༻ "
+    echo " ༺ Управление сервером по кайфу v5.1 ༻ "
     echo "======================================="
     echo " Что хозяин изволит? ༻ "
     echo "1) Установить новый сервер"
@@ -139,44 +139,31 @@ EOF
 }
 
 server_hide() {
-    echo "=== Маскировка сервера: перегенерация machine-id и смена hostname ==="
-
-    #########################################
-    # 1. Перегенерация machine-id
-    #########################################
-    echo "Перегенерация machine-id..."
+    echo -e "${ORANGE}=== Маскировка сервера: Перегенерация machine-id и смена hostname ===${NC}"
+    echo -e "${ORANGE}[1/2] Перегенерация machine-id...${NC}"
     sudo rm -f /etc/machine-id
     sudo systemd-machine-id-setup
-    echo "Новый machine-id: $(cat /etc/machine-id)"
+    echo -e "${GREEN}[✓] Новый machine-id: $(cat /etc/machine-id)${NC}"
     echo
 
-    #########################################
-    # 2. Генерация нового hostname
-    #########################################
-    echo "Генерация нового hostname..."
-
-    # Путь к файлу словаря
+    echo -e "${ORANGE}[2/2] Генерация нового hostname...${NC}"
     DICT="/usr/share/dict/words"
-
-    # Если словарь не найден, устанавливаем пакет wamerican без подтверждений
     if [ ! -f "$DICT" ]; then
-        echo "Файл $DICT не найден, устанавливаем пакет wamerican..."
+        echo -e "${ORANGE}Файл $DICT не найден, устанавливаем пакет wamerican...${NC}"
         sudo DEBIAN_FRONTEND=noninteractive apt-get update -y
         sudo DEBIAN_FRONTEND=noninteractive apt-get install -y wamerican
     fi
 
-    # Читаем слова из файла или используем резервный список
     if [ -f "$DICT" ]; then
         # Берём только строки, состоящие из строчных латинских букв
         words=( $(grep '^[a-z]\+$' "$DICT") )
     else
-        echo "Словарь не найден, используем резервный список слов."
+        echo -e "${RED}Словарь не найден, используем резервный список!${NC}"
         words=(apple banana cherry dog elephant fish grape honey lemon mango)
     fi
 
-    # Если массив слов пуст, переключаемся на резервный список
     if [ ${#words[@]} -eq 0 ]; then
-        echo "Словарь пуст, используем резервный список."
+        echo -e "${RED}Словарь пуст, используем резервный список!${NC}"
         words=(apple banana cherry dog elephant fish grape honey lemon mango)
     fi
 
@@ -197,72 +184,60 @@ server_hide() {
     delim_options=("-" "_" "." "")
     prefixes=("srv" "node" "host")
     env_options=("prod" "dev" "stg" "test" "qa")
-    # Выбираем случайный разделитель
     delim=${delim_options[$(( RANDOM % ${#delim_options[@]} ))]}
 
     # Случайным образом выбираем один из вариантов генерации hostname (от 0 до 10)
     pattern=$(( RANDOM % 11 ))
     case $pattern in
         0)
-            # Вариант: число + разделитель + слово1 + разделитель + слово2
             new_hostname="${rand1}${delim}${word1}${delim}${word2}"
             ;;
         1)
-            # Вариант: слово1 + разделитель + число + разделитель + слово2
             new_hostname="${word1}${delim}${rand1}${delim}${word2}"
             ;;
         2)
-            # Вариант: слово1 + разделитель + слово2 + разделитель + число
             new_hostname="${word1}${delim}${word2}${delim}${rand1}"
             ;;
         3)
-            # Вариант: число + разделитель + слово1 + разделитель + другое число + разделитель + слово2
             new_hostname="${rand1}${delim}${word1}${delim}${rand2}${delim}${word2}"
             ;;
         4)
-            # Вариант: слово1 + число + слово2 (без разделителей)
             new_hostname="${word1}${rand1}${word2}"
             ;;
         5)
-            # Вариант: слово1 + разделитель + слово2 с числом в конце
             new_hostname="${word1}${delim}${word2}${rand1}"
             ;;
         6)
-            # Вариант: число + разделитель + слово1 + разделитель + слово2 + разделитель + число
             new_hostname="${rand1}${delim}${word1}${delim}${word2}${delim}${rand2}"
             ;;
         7)
-            # Вариант: префикс + разделитель + слово1 + разделитель + слово2
             prefix=${prefixes[$(( RANDOM % ${#prefixes[@]} ))]}
             new_hostname="${prefix}${delim}${word1}${delim}${word2}"
             ;;
         8)
-            # Вариант: слово1 + разделитель + токен окружения + разделитель + слово2
             env=${env_options[$(( RANDOM % ${#env_options[@]} ))]}
             new_hostname="${word1}${delim}${env}${delim}${word2}"
             ;;
         9)
-            # CamelCase: слово1 и слово2 с заглавными первыми буквами + число в конце
             word1_cap="$(tr '[:lower:]' '[:upper:]' <<< ${word1:0:1})${word1:1}"
             word2_cap="$(tr '[:lower:]' '[:upper:]' <<< ${word2:0:1})${word2:1}"
             new_hostname="${word1_cap}${word2_cap}${rand1}"
             ;;
         10)
-            # Вариант: префикс + слово1 + токен окружения + слово2 + число (без разделителей)
             prefix=${prefixes[$(( RANDOM % ${#prefixes[@]} ))]}
             env=${env_options[$(( RANDOM % ${#env_options[@]} ))]}
             new_hostname="${prefix}${word1}${env}${word2}${rand2}"
             ;;
     esac
 
-    echo "Устанавливаем новый hostname: ${new_hostname}"
+    echo -e "${ORANGE}Устанавливаем новый hostname: ${new_hostname}${NC}"
     sudo hostnamectl set-hostname "${new_hostname}"
-    echo "Hostname успешно обновлён: $(hostname)"
+    echo -e "${GREEN}[✓] Hostname успешно обновлён: $(hostname)${NC}"
     echo
 
-    echo "Обратите внимание: PTR-запись не изменена этим скриптом!"
-    echo "Для обновления PTR-записи воспользуйтесь панелью управления VPS или API провайдера."
-    echo "=== Маскировка сервера завершена! ==="
+    echo -e "${ORANGE}Обратите внимание: PTR-запись не изменена этим скриптом!${NC}"
+    echo -e "${ORANGE}Для обновления PTR-записи воспользуйтесь панелью управления VPS или API провайдера.${NC}"
+    echo -e "${GREEN}=== Маскировка сервера завершена! ===${NC}"
 }
 
 # Решение
